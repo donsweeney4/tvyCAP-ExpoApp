@@ -26,6 +26,7 @@ yarn-debug.*
 yarn-error.*
 
 # macOS
+build*
 .DS_Store
 *.pem
 

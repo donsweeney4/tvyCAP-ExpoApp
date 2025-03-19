@@ -1,12 +1,13 @@
+
 {
   "expo": {
-    "name": "TVYCAP_UHI",
-    "slug": "dwsuhi-xvl-53v1jmdz-tegdkh",
-    "version": "3.0.1",
+    "name": "dwsFeb5",
+    "slug": "dwsfeb5",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -23,25 +24,46 @@
       }
     },
     "android": {
-
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "BLUETOOTH",
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
-        "BLUETOOTH_CONNECT",
-        "BLUETOOTH_ADVERTISE"
+        "BLUETOOTH_CONNECT"
       ],
-      "package": "org.questscience.BLEScanner"
+      "usesPermissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ],
+      "package": "org.questscience.BLEScanner",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "userInterfaceStyle": "light"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "ffee136a-7a4e-493c-8424-c3cb255be380"
+        "projectId": "21c5eb8f-7085-40b6-8fe0-803ce80e863c"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 23
+          }
+        }
+      ]
+    ]
   }
 }
