@@ -1,4 +1,4 @@
-import { Alert, Platform, PermissionsAndroid } from "react-native";
+import { Alert, Platform, PermissionsAndroid , Linking} from "react-native";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -18,6 +18,40 @@ let isSamplingRef = { current: false };
 const manager = new BleManager();
 
 let lastWriteTimestamp = 0; // Global variable to track last write timestamp
+
+/////////////////////////////////////////////////////////
+
+//#0 Permissions for BLE on Android 12 and higher
+async function requestBluetoothPermissions() {
+  if (Platform.OS === 'android' && Platform.Version >= 31) {  // Android 12 or higher
+      const grantedScan = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          {
+              title: 'Bluetooth Scan Permission',
+              message: 'This app needs access to scan for BLE devices.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+          },
+      );
+
+      const grantedConnect = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          {
+              title: 'Bluetooth Connect Permission',
+              message: 'This app needs access to connect to BLE devices.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+          },
+      );
+
+      return grantedScan === PermissionsAndroid.RESULTS.GRANTED &&
+             grantedConnect === PermissionsAndroid.RESULTS.GRANTED;
+  }
+  return true;  // For Android < 12 or iOS
+}
+
 
 
 //#1. handleStart: scan, connect and start sampling BLE temperature sensor
@@ -47,6 +81,9 @@ export const handleStart = async (
     return;
   }
   console.log("✅ Location permission granted.");
+
+  // ✅ Request Bluetooth permissions (Android 12+)
+  const blePermissionsGranted = await requestBluetoothPermissions();
 
   try {
     // ✅ Disconnect existing connection before scanning
@@ -530,36 +567,55 @@ lastWriteTimestamp = timestamp;
                       };
 */
 
-//#6. Email csv File 
-export const emailDatabase = async (
-                  dbFilePath, 
-                  jobcodeRef, 
-                  emailAddress, 
-                  isSamplingRef) => {
-  try { 
-    console.log(` Emailing database file. Sampling is ${isSamplingRef.current}`);
-    // ✅ Check if sampling is in progress
 
+
+
+//#6 📌 Function to trigger email on Android using Linking (Intent-based approach)
+const sendEmailAndroid = async (emailAddress, shareablePath) => {
+  const subject = "Sensor Data Backup";
+  const body = "Attached is the sensor data CSV file.";
+  
+  const emailUrl = `mailto:${emailAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  
+  try {
+    await Linking.openURL(emailUrl);
+    console.log("✅ Email intent triggered successfully on Android.");
+  } catch (error) {
+    console.error("❌ Error triggering email intent on Android:", error);
+    Alert.alert("Error", "Unable to send email.");
+  }
+};
+
+//#7. Email Database
+export const emailDatabase = async (
+  dbFilePath,
+  jobcodeRef,
+  emailAddress,
+  isSamplingRef
+) => {
+  try { 
+    console.log(`Emailing database file. Sampling is ${isSamplingRef.current}`);
+    
+    // ✅ Check if sampling is in progress
     if (isSamplingRef.current) {
-      await showToastAsync("Sampling in Progress.  Stop sampling before sending email.", 2000);
+      await showToastAsync("Sampling in Progress. Stop sampling before sending email.", 2000);
       return;
     }
 
-    // ✅ Check if Mail Composer is available
+    // ✅ Check if Mail Composer is available (iOS and Android check)
     const isAvailable = await MailComposer.isAvailableAsync();
-    if (!isAvailable) {
+    if (!isAvailable && Platform.OS === 'ios') {  // Only warn if on iOS
       Alert.alert("Error", "Mail Composer is not available.");
       return;
     }
 
-// ✅ Check if dbFilePath is valid
-if (!dbFilePath || typeof dbFilePath !== "string") {
-  console.error("❌ Error: dbFilePath is not set or invalid:", dbFilePath);
-  Alert.alert("Error", "Database file path is invalid.");
-  return;
-}
- 
- 
+    // ✅ Check if dbFilePath is valid
+    if (!dbFilePath || typeof dbFilePath !== "string") {
+      console.error("❌ Error: dbFilePath is not set or invalid:", dbFilePath);
+      Alert.alert("Error", "Database file path is invalid.");
+      return;
+    }
+    
     // ✅ Check if the database file exists
     const fileExists = await FileSystem.getInfoAsync(dbFilePath);
     if (!fileExists.exists) {
@@ -602,8 +658,9 @@ if (!dbFilePath || typeof dbFilePath !== "string") {
       return;
     }
 
-    console.log("📊 Fetched data from database",jobcodeRef);
+    console.log("📊 Fetched data from database", jobcodeRef);
     jobcode = jobcodeRef.current;
+
     // ✅ Convert data to CSV format
     const csvHeader = "rownumber,jobcode,Timestamp,Local Date,Local Time,Temperature (°C),Humidity (%),Latitude,Longitude,Altitude (m),Accuracy (m),Speed (MPH)\n";
     const csvBody = appData
@@ -620,36 +677,39 @@ if (!dbFilePath || typeof dbFilePath !== "string") {
 
     const csvContent = csvHeader + csvBody;
 
-    // ✅ Save CSV file
-    attachmentPath = FileSystem.documentDirectory + `${jobcode}.csv`;
-
-    await FileSystem.writeAsStringAsync(attachmentPath, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+    // ✅ Save CSV file in a shareable directory (Works on both Android and iOS)
+    const shareablePath = FileSystem.cacheDirectory + `${jobcode}.csv`;
+    await FileSystem.writeAsStringAsync(shareablePath, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
     fileType = "csv";
-    console.log(`📁 CSV file saved at: ${attachmentPath}`);
+    console.log(`📁 CSV file saved at: ${shareablePath}`);
 
     // ✅ Read and print the contents of the saved CSV file
-try {
-  const fileContents = await FileSystem.readAsStringAsync(attachmentPath, { encoding: FileSystem.EncodingType.UTF8 });
-  console.log("📄 CSV File Contents:\n", fileContents);
-} catch (error) {
-  console.error("❌ Error reading CSV file for debug:", error);
-}
+    try {
+      const fileContents = await FileSystem.readAsStringAsync(shareablePath, { encoding: FileSystem.EncodingType.UTF8 });
+      console.log("📄 CSV File Contents:\n", fileContents);
+    } catch (error) {
+      console.error("❌ Error reading CSV file for debug:", error);
+    }
 
-    // ✅ Compose and send email
-    const emailResponse = await MailComposer.composeAsync({
-      recipients: [emailAddress],
-      subject: "Sensor Data Backup",
-      body: `Attached is the sensor data ${fileType}.`,
-      attachments: [attachmentPath],
-    });
+    // ✅ Handle email differently for Android and iOS
+    if (Platform.OS === 'android') {
+      console.log(`✅ Email process initiated for ${fileType} file: ${shareablePath}`);
+      await sendEmailAndroid(emailAddress, shareablePath);
+      await FileSystem.deleteAsync(shareablePath, { idempotent: true });
+      console.log("🗑️ Temporary CSV file deleted.");
+    } else {
+      const emailResponse = await MailComposer.composeAsync({
+        recipients: [emailAddress],
+        subject: "Sensor Data Backup",
+        body: `Attached is the sensor data CSV file.`,
+        attachments: [shareablePath],
+      });
 
-    console.log(`✅ Email process completed for ${fileType} file: ${attachmentPath}`);
+      console.log(`✅ Email process completed for ${fileType} file: ${shareablePath}`);
 
-    // ✅ Delete the file after email is dismissed
-    if (emailResponse.status === "sent" || emailResponse.status === "dismissed") {
-      if (fileType === "csv") {
-        await FileSystem.deleteAsync(attachmentPath, { idempotent: true });
-        console.log("🗑️ CSV file deleted.");
+      if (emailResponse.status === "sent" || emailResponse.status === "dismissed") {
+        await FileSystem.deleteAsync(shareablePath, { idempotent: true });
+        console.log("🗑️ Temporary CSV file deleted.");
       }
     }
   } catch (error) {
@@ -657,6 +717,8 @@ try {
     Alert.alert("Error", "Failed to send email.");
   }
 };
+
+
 
 
 //#8. Stop Sampling
