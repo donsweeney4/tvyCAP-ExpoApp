@@ -5,12 +5,15 @@ import {
   Text,
   Alert,
   View,
-  Button
+  Dimensions,
+  Platform,
+  Image,
 } from "react-native";
 
 import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import { useFocusEffect } from "@react-navigation/native";
+import { Button } from 'react-native-elements';
 import * as SQLite from "expo-sqlite";
 
 import { handleStart, emailDatabase, stopSampling, confirmAndClearDatabase,clearDatabase } from "./functions";
@@ -42,6 +45,10 @@ export default function MainScreen() {
   const isSamplingRef = useRef(false);
   const isIntentionalDisconnectRef = useRef(false);
   const deviceRef = useRef(null);
+
+  const { width, height } = Dimensions.get("window");
+  const logoWidth = width * 0.15;
+  const logoHeight = height * 0.15;
 
   // ✅ Ensure the latest device name and email is fetched when screen is focused
 
@@ -164,7 +171,7 @@ export default function MainScreen() {
     }; 
     initializeFilePath(); 
     return () => { isMounted = false };  // Cleanup function
-  }, []);
+  }, [deviceName]);
 
 
 
@@ -191,20 +198,29 @@ export default function MainScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>TVYCAP UHI Sensor</Text>
+      <Text style={styles.header}>TriValley Youth</Text>
+      <Text style={styles.header}>Climate Action Program</Text>
+      <Text style={styles.title}>UHI Sensor</Text>
       <Text style={styles.version}>Version: {VERSION}</Text>
-      <Text style={styles.status}>Sensor: {deviceName}</Text>
-      <Text style={styles.temperature}>{"\n"}Counter: {counter} </Text>
-      <Text>
-        {"\n"}Temperature: {String(temperature)}C{"\n"} GPS Accuracy: {String(accuracy)}m{"\n"}
-      </Text>
 
-      {/* Start button */}
+    <Text style={styles.status}>
+        Sensor: {deviceName}{"\n"}
+        Email: {emailAddress}  {"\n"}   
+        Temperature: {(temperature * 9/5 + 32).toFixed(2)}°F {"\n"}
+        GPS Accuracy: {String(accuracy)}m
+    </Text>
+
+      <Text style={styles.temperature}>Counter: {counter} </Text>
+
+      {/* Start button  color={isSamplingRef?.current || isScanningRef?.current ? "gray" : "red"} */}
 
   <Button
       title="Start"
-      color={isSamplingRef?.current || isScanningRef?.current ? "gray" : "red"}
-      onPress={() => {
+      containerStyle={{ width: '35%' }}
+      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+      titleStyle={{ color: 'yellow' }}
+
+        onPress={() => {
         console.log("--> Start button pressed!", db, isScanningRef.current, isSamplingRef.current);
         
         handleStart(
@@ -228,10 +244,13 @@ export default function MainScreen() {
       disabled={isScanningRef.current || isSamplingRef.current}   
 />
 
-{/* Stop button */}
+{/* Stop button  color={isSamplingRef?.current ? "red" : "gray"}*/}
 <Button
-      title="Stop Sampling"
-      color={isSamplingRef?.current ? "red" : "gray"}
+      title="Stop"
+      containerStyle={{ width: '35%' }}
+      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+      titleStyle={{ color: 'yellow' }}
+      
       onPress={() => {
         console.log("Stop button pressed!", db, deviceRef.current);  
         if (!deviceRef.current) {
@@ -251,23 +270,27 @@ export default function MainScreen() {
       disabled={!isSamplingRef.current}  
 />
 
-{/* Email .csv button */}
+{/* Email .csv button color={isSamplingRef?.current ? "gray" : "red"} */}
 <Button
-      title="Email Data File"
-      color={isSamplingRef?.current ? "gray" : "red"}
+      title={Platform.OS === 'ios' ? 'Email Data' : 'Share to Drive'}
+      containerStyle={{ width: '35%' }}
+      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+      titleStyle={{ color: 'yellow' }}
       onPress={() => {
         emailDatabase(dbFilePath, jobcodeRef, emailAddress, isSamplingRef, setDummyState); // ✅ Call function   
       }}
       disabled={isSamplingRef.current} 
-/>
+/>      
 
 {/* Clear Data Rows button */}
     <View style={{ marginBottom: 40 }}>
-      <Text> --- </Text> 
+        <Text> </Text> 
     </View> 
 <Button
   title="Clear Data"
-  color="black"
+  containerStyle={{ width: '35%' }}
+      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+      titleStyle={{ color: 'yellow' }}
   onPress={() => {confirmAndClearDatabase( 
       db, 
       setDummyState, 
@@ -282,18 +305,51 @@ export default function MainScreen() {
   }}
 />
 
-
-
+{/* Logo */}
+<Image
+        source={require("./assets/icon.png")}
+        style={[
+          styles.logo,
+          {
+            width: logoWidth,
+            height: logoHeight
+          }
+        ]}
+        resizeMode="contain"
+/>
+<Text style={styles.questname}>Quest Science Center{"\n"}Livermore, CA</Text>
 
 </View>
   );
 }
 
 // ✅ Styles
+const { width, height } = Dimensions.get("window");
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#eef", alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 26, marginBottom: 7, color: "blue" },
-  temperature: { fontSize: 24, marginBottom: 10, color: "red" },
-  status: { fontSize: 18, marginVertical: 10 },
+  container: { flex: 1, backgroundColor: "#eef", alignItems: "center",
+    justifyContent: "flex-start",paddingTop: height * 0.09 },
+
+    
+  header: { fontSize: 20, marginBottom: 4, color:'rgb(53, 111, 130)',fontWeight: "bold"},
+  title: { fontSize: 36, marginBottom: 7, color: "blue",fontWeight: "bold"},
+
+  temperature: {
+    fontSize: 36,
+    marginTop: 20,
+    marginBottom: 30,
+    color: "yellow",
+    fontWeight: "bold",
+    borderColor: "blue",
+    backgroundColor: "blue",
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 10
+  },
+  
+
+  status: { fontSize: 18, marginVertical: 3 },
   version: { fontSize: 12, marginBottom: 15, color: "blue" },
+  logo: {position: "absolute",bottom: 0,left: 0,marginBottom: 25,marginLeft:5,},
+  questname: {position: "absolute",bottom: 0,left: 0,marginBottom: 5,marginLeft:5,
+    fontSize: 18,color: "blue"},
 });

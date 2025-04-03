@@ -2,7 +2,7 @@
   "expo": {
     "name": "TVYCAP_UHI",
     "slug": "dwsuhi-xvl-53v1jmdz-tegdkh",
-    "version": "3.0.1",
+    "version": "3.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -31,7 +31,9 @@
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
-        "BLUETOOTH_ADVERTISE"
+        "BLUETOOTH_ADVERTISE",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
       ],
       "package": "org.questscience.BLEScanner"
     },

@@ -2,8 +2,8 @@ import { Alert, Platform, PermissionsAndroid , Linking} from "react-native";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import * as MailComposer from "expo-mail-composer";
 import { BleManager } from "react-native-ble-plx";
+import * as MailComposer from 'expo-mail-composer';
 import * as SQLite from 'expo-sqlite';
 import { atob } from "react-native-quick-base64"; 
 
@@ -569,8 +569,8 @@ lastWriteTimestamp = timestamp;
 
 
 
-
-//#6 📌 Function to trigger email on Android using Linking (Intent-based approach)
+//================
+//#6 📌NOT USED  --  Function to trigger email on Android using Linking (Intent-based approach)
 const sendEmailAndroid = async (emailAddress, shareablePath) => {
   const subject = "Sensor Data Backup";
   const body = "Attached is the sensor data CSV file.";
@@ -585,14 +585,14 @@ const sendEmailAndroid = async (emailAddress, shareablePath) => {
     Alert.alert("Error", "Unable to send email.");
   }
 };
+//===============
 
 //#7. Email Database
 export const emailDatabase = async (
   dbFilePath,
   jobcodeRef,
   emailAddress,
-  isSamplingRef
-) => {
+  isSamplingRef) => {
   try { 
     console.log(`Emailing database file. Sampling is ${isSamplingRef.current}`);
     
@@ -679,6 +679,8 @@ export const emailDatabase = async (
 
     // ✅ Save CSV file in a shareable directory (Works on both Android and iOS)
     const shareablePath = FileSystem.cacheDirectory + `${jobcode}.csv`;
+    
+
     await FileSystem.writeAsStringAsync(shareablePath, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
     fileType = "csv";
     console.log(`📁 CSV file saved at: ${shareablePath}`);
@@ -686,40 +688,99 @@ export const emailDatabase = async (
     // ✅ Read and print the contents of the saved CSV file
     try {
       const fileContents = await FileSystem.readAsStringAsync(shareablePath, { encoding: FileSystem.EncodingType.UTF8 });
-      console.log("📄 CSV File Contents:\n", fileContents);
+  //  console.log("📄 CSV File Contents:\n", fileContents);
     } catch (error) {
       console.error("❌ Error reading CSV file for debug:", error);
     }
 
-    // ✅ Handle email differently for Android and iOS
-    if (Platform.OS === 'android') {
-      console.log(`✅ Email process initiated for ${fileType} file: ${shareablePath}`);
-      await sendEmailAndroid(emailAddress, shareablePath);
-      await FileSystem.deleteAsync(shareablePath, { idempotent: true });
-      console.log("🗑️ Temporary CSV file deleted.");
-    } else {
-      const emailResponse = await MailComposer.composeAsync({
-        recipients: [emailAddress],
-        subject: "Sensor Data Backup",
-        body: `Attached is the sensor data CSV file.`,
-        attachments: [shareablePath],
-      });
+   // ✅ Handle attachment URI differently for Android 
+   let finalAttachmentUri = shareablePath;  //  for iOS
 
-      console.log(`✅ Email process completed for ${fileType} file: ${shareablePath}`);
+  if (Platform.OS === 'android') {
+    await shareToDriveWithAttachment(emailAddress, shareablePath)
+  }
 
-      if (emailResponse.status === "sent" || emailResponse.status === "dismissed") {
+ 
+
+// Now use finalAttachmentUri in composeAsync:
+    if (Platform.OS === 'ios') {
+          const emailResponse = await MailComposer.composeAsync({
+          recipients: [emailAddress],
+          subject: "Sensor Data Backup",
+          body: "Attached is the sensor data CSV file.",
+          attachments: [finalAttachmentUri], // uses content URI on Android, file path on iOS
+        });
+        console.log("📧 Email response:", emailResponse)  ;
+      }
+    
+   // ✅ Delete the temporary CSV file after sharing
+        // Note: FileSystem.deleteAsync will not work with content URIs on Android
+        // Use the shareablePath directly for deletion 
         await FileSystem.deleteAsync(shareablePath, { idempotent: true });
         console.log("🗑️ Temporary CSV file deleted.");
-      }
-    }
+        await db.closeAsync();
+    
   } catch (error) {
-    console.error("❌ Error sending email:", error);
-    Alert.alert("Error", "Failed to send email.");
+    console.error("❌ Error sharing or sending email:", error);
+    Alert.alert("Error", "Failed to share or send email.");
   }
 };
 
+//#7a. shareToDriveWithAttachment for Android
+async function shareToDriveWithAttachment(emailAddress, shareablePath) {
+  let finalAttachmentUri = shareablePath;
 
+  // Debug: File info before sending
+  const originalFileInfo = await FileSystem.getInfoAsync(shareablePath);
+  console.log("Original file info:", originalFileInfo);
+  await showToastAsync("For Android - Share data to your Google Drive", 4000);
 
+  await Sharing.shareAsync(shareablePath, { mimeType: "text/csv" });
+}
+  
+  
+  
+  
+ /*  
+ 
+ // Debug: Check MailComposer availability (Android)
+  if (Platform.OS === 'android') {
+      const isAvailable = await MailComposer.isAvailableAsync();
+      console.log("MailComposer available on Android:", isAvailable);
+      if (!isAvailable) {
+          Alert.alert("Error", "Mail Composer is not available on this device.");
+          return;
+      }
+  }
+
+  console.log("🚀 About to call MailComposer.composeAsync...");
+
+  const composePromise = MailComposer.composeAsync({
+      recipients: [emailAddress],
+      subject: "Sensor Data Backup",
+      body: "Attached is the sensor data CSV file.",
+      attachments: [finalAttachmentUri],
+  });
+
+  try {
+      const timeoutPromise = new Promise((resolve, reject) => {
+          setTimeout(() => reject(new Error("MailComposer.composeAsync timed out")), 15000); // 15 seconds timeout
+      });
+
+      const emailResponse = await Promise.race([composePromise, timeoutPromise]);
+
+      console.log("📧 Email sent/result (inside try):", emailResponse);
+      console.log("📧 Email Response (inside try):", JSON.stringify(emailResponse));
+
+  } catch (error) {
+      console.error("❌ Error sending Android email:", error);
+      Alert.alert("Error", "Failed to send email: " + error.message);
+  }
+
+  console.log("🚀 After await MailComposer.composeAsync (outside try):");
+  console.log("🚀 Full emailResponse (outside try):", JSON.stringify(emailResponse)); // Ensure emailResponse is defined here
+}
+ */
 
 //#8. Stop Sampling
 export const stopSampling = async (
