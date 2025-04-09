@@ -8,6 +8,7 @@ import {
   Dimensions,
   Platform,
   Image,
+  PixelRatio,
 } from "react-native";
 
 import * as FileSystem from "expo-file-system";
@@ -49,7 +50,10 @@ export default function MainScreen() {
   const { width, height } = Dimensions.get("window");
   const logoWidth = width * 0.15;
   const logoHeight = height * 0.15;
-
+  const pixelRatio = PixelRatio.get();
+  
+  
+ 
   // ✅ Ensure the latest device name and email is fetched when screen is focused
 
   useFocusEffect(
@@ -327,7 +331,7 @@ export default function MainScreen() {
 const { width, height } = Dimensions.get("window");
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#eef", alignItems: "center",
-    justifyContent: "flex-start",paddingTop: height * 0.09 },
+    justifyContent: "flex-start",paddingTop: height * 0.05 },
 
     
   header: { fontSize: 20, marginBottom: 4, color:'rgb(53, 111, 130)',fontWeight: "bold"},
@@ -349,7 +353,7 @@ const styles = StyleSheet.create({
 
   status: { fontSize: 18, marginVertical: 3 },
   version: { fontSize: 12, marginBottom: 15, color: "blue" },
-  logo: {position: "absolute",bottom: 0,left: 0,marginBottom: 25,marginLeft:5,},
-  questname: {position: "absolute",bottom: 0,left: 0,marginBottom: 5,marginLeft:5,
+  logo: {position: "absolute",bottom: 0,right: 0,marginRight:5,marginBottom:-35,},
+  questname: {position: "absolute",bottom: 0,left: 0,marginBottom:0,marginLeft:5,
     fontSize: 18,color: "blue"},
 });
