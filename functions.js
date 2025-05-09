@@ -1,12 +1,9 @@
-import { Alert, Platform, PermissionsAndroid , Linking} from "react-native";
+import { Alert, Platform, PermissionsAndroid } from "react-native";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
 import { BleManager } from "react-native-ble-plx";
-import * as MailComposer from 'expo-mail-composer';
 import * as SQLite from 'expo-sqlite';
 import { atob } from "react-native-quick-base64"; 
-
 import { TARGET_CHARACTERISTIC_UUID } from "./constants";
 import {showToastAsync} from "./functionsHelper";
 
@@ -70,209 +67,167 @@ export const handleStart = async (
   latestLocationRef,
   locationRef,
   isTrackingRef,
-  setDummyState
+  setDummyState,
+  setIsFallbackConnection // ⬅️ NEW: React state setter
 ) => {
   console.log(`🚀 handleStart triggered, looking for ${deviceName}`);
 
-  // ✅ Request location permission
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== "granted") {
     Alert.alert("Permission Denied", "Location access is required for tracking.");
     return;
   }
-  console.log("✅ Location permission granted.");
 
-  // ✅ Request Bluetooth permissions (Android 12+)
   const blePermissionsGranted = await requestBluetoothPermissions();
+  if (!blePermissionsGranted) {
+    Alert.alert("Permission Denied", "Bluetooth permissions are required.");
+    return;
+  }
 
   try {
-    // ✅ Disconnect existing connection before scanning
+    // Disconnect if already connected
     if (isConnectedRef.current || deviceRef.current) {
       try {
         if (deviceRef.current) {
-          console.log(`🔌 Disconnecting from ${deviceRef.current.name || "unknown device"}...`);
+          console.log(`🔌 Disconnecting from ${deviceRef.current.name || "unknown"}...`);
           await deviceRef.current.cancelConnection();
-          console.log("✅ Device disconnected successfully.");
+          console.log("✅ Disconnected successfully.");
         }
         isConnectedRef.current = false;
         deviceRef.current = null;
       } catch (error) {
-        console.warn("⚠️ Failed to disconnect:", error);
+        console.warn("⚠️ Disconnect failed:", error);
       }
     }
 
-    // ✅ Start scanning for BLE device
-    await showToastAsync(`Starting scan for ${deviceName}!`, 2000);
+    await showToastAsync(`Scanning for ${deviceName}...`, 2000);
     isScanningRef.current = true;
-    setDummyState(prev => prev + 1); // ✅ Trigger re-render to update UI
+    setDummyState(prev => prev + 1);
 
-    // ✅ Set scan timeout
-    const scanTimeout = setTimeout(async () => {
-      console.log("⏳ Scan timeout reached. Stopping scan.");
-      await showToastAsync("Sensor not found!!! Check sensor and restart this App", 2000);
-      manager.stopDeviceScan();
-      isScanningRef.current = false;
-      setDummyState(prev => prev + 1); // ✅ Trigger re-render to update UI
-    }, 10000);
+    const { connected, usedFallback } = await connectToPrimaryOrSecondaryDevice(
+      db,
+      manager,
+      deviceRef,
+      isScanningRef,
+      isConnectedRef,
+      isIntentionalDisconnectRef,
+      characteristicsRef,
+      setDummyState,
+      deviceName
+    );
 
-    // ✅ Handle device discovery
-    const handleDeviceFound = async (device) => {
-      console.log(`🔍 Found device: ${device.name || device.localName}. Stopping scan.`);
-      clearTimeout(scanTimeout);
-      manager.stopDeviceScan();
-      isScanningRef.current = false;
-
-      console.log("🔗 Connecting to device...");
-      const connected = await connectToDevice(
-        db,
-        device,
-        deviceRef,
-        isScanningRef,
-        isConnectedRef,
-        isIntentionalDisconnectRef,
-        characteristicsRef,
-        setDummyState
-      );
-
-      if (connected && characteristicsRef.current) {
-        isConnectedRef.current = true;
-        await showToastAsync("✅ Sensor found, starting sampling", 2000);
-
-        setTimeout(() => {
-          console.log("🚀 Calling startSampling...");
-          startSampling(db, 
-            characteristicsRef, 
-            setCounter, 
-            setTemperature, 
-            setAccuracy, 
-            isSamplingRef, 
-            isTrackingRef,
-            setDummyState,
-            isIntentionalDisconnectRef,
-            deviceRef);
-        }, 500);
-      } else {
-        console.warn("⚠️ Device connected, but no characteristic found.");
-        await showToastAsync("⚠️ Device connected but no characteristic found!", 2000);
-      }
-    };
-
-    // ✅ Start scanning
-    manager.startDeviceScan(null, null, (error, device) => {
-      if (error) {
-        console.error("Error during scanning:", error);
-        clearTimeout(scanTimeout);
-        manager.stopDeviceScan();
-        isScanningRef.current = false;
-        setDummyState(prev => prev + 1); // ✅ Trigger re-render to update UI
-        Alert.alert("Error", "Failed to scan for devices.");
-        return;
-      }
-
-      if (device?.name === deviceName || device?.localName === deviceName) {
-        handleDeviceFound(device);
-        deviceRef.current = device;
-      }
-    });
-  } catch (error) {
-    console.error("Error during start:", error);
     isScanningRef.current = false;
+    setDummyState(prev => prev + 1);
+
+    if (connected && characteristicsRef.current) {
+      isConnectedRef.current = true;
+      setIsFallbackConnection(usedFallback); // ✅ Flag for UI
+
+      if (usedFallback) {
+        await showToastAsync("🟡 Connected using fallback name. Please assign a new name.", 3000);
+      } else {
+        await showToastAsync("✅ Sensor connected, starting sampling", 2000);
+      }
+
+      setTimeout(() => {
+        startSampling(
+          db,
+          characteristicsRef,
+          setCounter,
+          setTemperature,
+          setAccuracy,
+          isSamplingRef,
+          isTrackingRef,
+          setDummyState,
+          isIntentionalDisconnectRef,
+          deviceRef
+        );
+      }, 500);
+    } else {
+      await showToastAsync("❌ Sensor not found or failed to connect", 2000);
+      setIsFallbackConnection(false); // reset
+    }
+  } catch (error) {
+    console.error("❌ Error in handleStart:", error);
+    isScanningRef.current = false;
+    setDummyState(prev => prev + 1);
+    Alert.alert("Error", "Failed to start device connection.");
   }
 };
 
 
-//#2. connectToDevice: Connect to device and check characteristic
-const connectToDevice = async (
+
+//#2. connectToPrimaryOrSecondaryDevice: Connect to device and check characteristic
+const connectToPrimaryOrSecondaryDevice = async (
   db,
-  device,
+  manager,
   deviceRef,
   isScanningRef,
   isConnectedRef,
   isIntentionalDisconnectRef,
   characteristicsRef,
-  setDummyState
+  setDummyState,
+  knownPrimaryName = null
 ) => {
-  console.log(`🔗 Connecting to ${device.name || device.localName}...`);
+  return new Promise((resolve, reject) => {
+    const secondaryName = "default_001";
+    let connected = false;
+    let usedFallback = false;
 
-  try {
-    if (Platform.OS === "android") {
-      await PermissionsAndroid.requestMultiple([
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-      ]);
-    }
+    const subscription = manager.onStateChange(async (state) => {
+      if (state === "PoweredOn") {
+        subscription.remove();
 
-    if (await device.isConnected()) {
-      console.log("⚠️ Device is already connected. Skipping connection.");
-      return true;
-    }
+        manager.startDeviceScan(null, null, async (error, device) => {
+          if (error) {
+            console.error("❌ BLE scan error:", error);
+            reject(error);
+            return;
+          }
 
-    const connectedDevice = await device.connect();
-    if (!connectedDevice) {
-      console.error("❌ Failed to connect to device.");
-      Alert.alert("Error", "Could not connect to device.");
-      return false;
-    }
-    console.log("✅ Device connected.");
+          const deviceName = device.name || device.localName || "";
 
-    await connectedDevice.discoverAllServicesAndCharacteristics();
-    const services = await connectedDevice.services();
-    
-    let characteristicFound = false;
-    for (const service of services) {
-      console.log(`🔍 Service found: ${service.uuid}`);
-      const characteristics = await service.characteristics();
-      for (const characteristic of characteristics) {
-        console.log(`   🔹 Characteristic found: ${characteristic.uuid}`);
+          const isPrimaryMatch = knownPrimaryName && deviceName === knownPrimaryName;
+          const isSecondaryMatch = deviceName === secondaryName;
 
-        if (characteristic.uuid.toLowerCase() === TARGET_CHARACTERISTIC_UUID.toLowerCase()) {
-          characteristicsRef.current = characteristic;
-          characteristicFound = true;
-          console.log(`✅ Target characteristic found: ${characteristic.uuid}`);
-          break;
-        }
+          if (!connected && (isPrimaryMatch || isSecondaryMatch)) {
+            console.log(`📡 Found target device: ${deviceName}`);
+            manager.stopDeviceScan();
+
+            const success = await connectToDevice(
+              db,
+              device,
+              deviceRef,
+              isScanningRef,
+              isConnectedRef,
+              isIntentionalDisconnectRef,
+              characteristicsRef,
+              setDummyState
+            );
+
+            if (success) {
+              connected = true;
+              usedFallback = isSecondaryMatch;
+              resolve({ connected, usedFallback });
+            } else {
+              resolve({ connected: false, usedFallback: false });
+            }
+          }
+        });
+
+        setTimeout(() => {
+          if (!connected) {
+            manager.stopDeviceScan();
+            console.warn("⌛ Scan timeout - no matching device found.");
+            resolve({ connected: false, usedFallback: false });
+          }
+        }, 15000);
       }
-      if (characteristicFound) break;
-    }
-
-    if (!characteristicFound) {
-      console.error("❌ Target characteristic not found.");
-      Alert.alert("Error", "Failed to find the target characteristic.");
-      return false;
-    }
-
-    deviceRef.current = connectedDevice;
-    isConnectedRef.current = true;
-
-    deviceRef.current.onDisconnected(() => {
-      handleDeviceDisconnection(
-        db,
-        deviceRef,
-        isScanningRef,
-        isConnectedRef,
-        isIntentionalDisconnectRef,
-        characteristicsRef,
-        setDummyState
-      );
-      
-      stopSamplingLoop(
-                isTrackingRef, 
-                isSamplingRef, 
-                setDummyState, 
-                locationRef, 
-                isIntentionalDisconnectRef // ✅ Now explicitly passed
-      );
-      
-    });
-
-    return true;
-  } catch (error) {
-    console.error("❌ Error connecting to device:", error);
-    Alert.alert("Connection Error", "Failed to connect to the device.");
-    return false;
-  }
+    }, true);
+  });
 };
+
+
 
 //#2a ✅ Function to handle device disconnection
 const handleDeviceDisconnection = async (
@@ -548,239 +503,6 @@ lastWriteTimestamp = timestamp;
   }
 };
 
-/*  NOT USED SHARE FILE
-                      //#5. Share File
-                      export const shareFile = async (dataFilePath) => { // Removed unused parameters
-                        try {
-                          if (await FileSystem.getInfoAsync(dataFilePath).exists) {
-                            if (await Sharing.isAvailableAsync()) {
-                              await Sharing.shareAsync(dataFilePath, { mimeType: "text/csv" });
-                            } else {
-                              Alert.alert("Sharing Not Available", "File sharing is not supported on this platform.");
-                            }
-                          } else {
-                            Alert.alert("No File Found", "The log file does not exist.");
-                          }
-                        } catch (error) {
-                          console.error("Error sharing file:", error);
-                        }
-                      };
-*/
-
-
-
-//================
-//#6 📌NOT USED  --  Function to trigger email on Android using Linking (Intent-based approach)
-const sendEmailAndroid = async (emailAddress, shareablePath) => {
-  const subject = "Sensor Data Backup";
-  const body = "Attached is the sensor data CSV file.";
-  
-  const emailUrl = `mailto:${emailAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  
-  try {
-    await Linking.openURL(emailUrl);
-    console.log("✅ Email intent triggered successfully on Android.");
-  } catch (error) {
-    console.error("❌ Error triggering email intent on Android:", error);
-    Alert.alert("Error", "Unable to send email.");
-  }
-};
-//===============
-
-//#7. Email Database
-export const emailDatabase = async (
-  dbFilePath,
-  jobcodeRef,
-  emailAddress,
-  isSamplingRef) => {
-  try { 
-    console.log(`Emailing database file. Sampling is ${isSamplingRef.current}`);
-    
-    // ✅ Check if sampling is in progress
-    if (isSamplingRef.current) {
-      await showToastAsync("Sampling in Progress. Stop sampling before sending email.", 2000);
-      return;
-    }
-
-    // ✅ Check if Mail Composer is available (iOS and Android check)
-    const isAvailable = await MailComposer.isAvailableAsync();
-    if (!isAvailable && Platform.OS === 'ios') {  // Only warn if on iOS
-      Alert.alert("Error", "Mail Composer is not available.");
-      return;
-    }
-
-    // ✅ Check if dbFilePath is valid
-    if (!dbFilePath || typeof dbFilePath !== "string") {
-      console.error("❌ Error: dbFilePath is not set or invalid:", dbFilePath);
-      Alert.alert("Error", "Database file path is invalid.");
-      return;
-    }
-    
-    // ✅ Check if the database file exists
-    const fileExists = await FileSystem.getInfoAsync(dbFilePath);
-    if (!fileExists.exists) {
-      console.warn("⚠️ Database file does not exist. Skipping database operations.");
-      Alert.alert("Error", "Database file not found.");
-      return;
-    }
-
-    console.log("📂 Database file exists, proceeding with data operations.");
-    
-    let attachmentPath = dbFilePath; // Default to database file
-    let fileType = "database";
-
-    // ✅ Open database only if it exists
-    const db = await SQLite.openDatabaseAsync("appData.db");
-
-    // ✅ Check if columns exist before modifying the table
-    const checkColumnExists = async (columnName) => {
-      const result = await db.getAllAsync(`PRAGMA table_info(appData);`);
-      return result.some(row => row.name === columnName);
-    };
-
-    if (!(await checkColumnExists("jobcode"))) {
-      await db.execAsync(`ALTER TABLE appData ADD COLUMN jobcode TEXT;`);
-    }
-    await db.runAsync(`UPDATE appData SET jobcode = ?`, [jobcodeRef.current]);
-
-    if (!(await checkColumnExists("rownumber"))) {
-      await db.execAsync(`ALTER TABLE appData ADD COLUMN rownumber INTEGER;`);
-    }
-    await db.runAsync(
-      `UPDATE appData 
-       SET rownumber = rowid - (SELECT MIN(rowid) FROM appData) + 1;`
-    );
-
-    // ✅ Fetch data after updates
-    const appData = await db.getAllAsync("SELECT * FROM appData;");
-    if (appData.length === 0) {
-      Alert.alert("No Data", "There is no data in the database.");
-      return;
-    }
-
-    console.log("📊 Fetched data from database", jobcodeRef);
-    jobcode = jobcodeRef.current;
-
-    // ✅ Convert data to CSV format
-    const csvHeader = "rownumber,jobcode,Timestamp,Local Date,Local Time,Temperature (°C),Humidity (%),Latitude,Longitude,Altitude (m),Accuracy (m),Speed (MPH)\n";
-    const csvBody = appData
-      .map(({ rownumber, jobcode, timestamp, temperature, humidity, latitude, longitude, altitude, accuracy, speed }) => {
-        const dateObj = new Date(timestamp);
-        const localDate = dateObj.toLocaleDateString();
-        const localTime = dateObj.toLocaleTimeString([], { hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-        const speedMph = ((speed * 1e-2) * 2.23694).toFixed(2); // Convert to MPH
-
-        return `${rownumber},${jobcode},${timestamp},${localDate},${localTime},${(temperature * 1e-2).toFixed(2)},${humidity.toFixed(1)},${(latitude * 1e-7).toFixed(6)},${(longitude * 1e-7).toFixed(6)},${(altitude * 1e-2).toFixed(2)},${(accuracy * 1e-2).toFixed(2)},${speedMph}`;
-      })
-      .join("\n");
-
-    const csvContent = csvHeader + csvBody;
-
-    // ✅ Save CSV file in a shareable directory (Works on both Android and iOS)
-    const shareablePath = FileSystem.cacheDirectory + `${jobcode}.csv`;
-    
-
-    await FileSystem.writeAsStringAsync(shareablePath, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-    fileType = "csv";
-    console.log(`📁 CSV file saved at: ${shareablePath}`);
-
-    // ✅ Read and print the contents of the saved CSV file
-    try {
-      const fileContents = await FileSystem.readAsStringAsync(shareablePath, { encoding: FileSystem.EncodingType.UTF8 });
-  //  console.log("📄 CSV File Contents:\n", fileContents);
-    } catch (error) {
-      console.error("❌ Error reading CSV file for debug:", error);
-    }
-
-   // ✅ Handle attachment URI differently for Android 
-   let finalAttachmentUri = shareablePath;  //  for iOS
-
-  if (Platform.OS === 'android') {
-    await shareToDriveWithAttachment(emailAddress, shareablePath)
-  }
-
- 
-
-// Now use finalAttachmentUri in composeAsync:
-    if (Platform.OS === 'ios') {
-          const emailResponse = await MailComposer.composeAsync({
-          recipients: [emailAddress],
-          subject: "Sensor Data Backup",
-          body: "Attached is the sensor data CSV file.",
-          attachments: [finalAttachmentUri], // uses content URI on Android, file path on iOS
-        });
-        console.log("📧 Email response:", emailResponse)  ;
-      }
-    
-   // ✅ Delete the temporary CSV file after sharing
-        // Note: FileSystem.deleteAsync will not work with content URIs on Android
-        // Use the shareablePath directly for deletion 
-        await FileSystem.deleteAsync(shareablePath, { idempotent: true });
-        console.log("🗑️ Temporary CSV file deleted.");
-        await db.closeAsync();
-    
-  } catch (error) {
-    console.error("❌ Error sharing or sending email:", error);
-    Alert.alert("Error", "Failed to share or send email.");
-  }
-};
-
-//#7a. shareToDriveWithAttachment for Android
-async function shareToDriveWithAttachment(emailAddress, shareablePath) {
-  let finalAttachmentUri = shareablePath;
-
-  // Debug: File info before sending
-  const originalFileInfo = await FileSystem.getInfoAsync(shareablePath);
-  console.log("Original file info:", originalFileInfo);
-  await showToastAsync("For Android - Share data to your Google Drive", 4000);
-
-  await Sharing.shareAsync(shareablePath, { mimeType: "text/csv" });
-}
-  
-  
-  
-  
- /*  
- 
- // Debug: Check MailComposer availability (Android)
-  if (Platform.OS === 'android') {
-      const isAvailable = await MailComposer.isAvailableAsync();
-      console.log("MailComposer available on Android:", isAvailable);
-      if (!isAvailable) {
-          Alert.alert("Error", "Mail Composer is not available on this device.");
-          return;
-      }
-  }
-
-  console.log("🚀 About to call MailComposer.composeAsync...");
-
-  const composePromise = MailComposer.composeAsync({
-      recipients: [emailAddress],
-      subject: "Sensor Data Backup",
-      body: "Attached is the sensor data CSV file.",
-      attachments: [finalAttachmentUri],
-  });
-
-  try {
-      const timeoutPromise = new Promise((resolve, reject) => {
-          setTimeout(() => reject(new Error("MailComposer.composeAsync timed out")), 15000); // 15 seconds timeout
-      });
-
-      const emailResponse = await Promise.race([composePromise, timeoutPromise]);
-
-      console.log("📧 Email sent/result (inside try):", emailResponse);
-      console.log("📧 Email Response (inside try):", JSON.stringify(emailResponse));
-
-  } catch (error) {
-      console.error("❌ Error sending Android email:", error);
-      Alert.alert("Error", "Failed to send email: " + error.message);
-  }
-
-  console.log("🚀 After await MailComposer.composeAsync (outside try):");
-  console.log("🚀 Full emailResponse (outside try):", JSON.stringify(emailResponse)); // Ensure emailResponse is defined here
-}
- */
 
 //#8. Stop Sampling
 export const stopSampling = async (

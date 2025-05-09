@@ -8,8 +8,9 @@ import {
   Dimensions,
   Platform,
   Image,
-  PixelRatio,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+
 
 import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
@@ -17,7 +18,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Button } from 'react-native-elements';
 import * as SQLite from "expo-sqlite";
 
-import { handleStart, emailDatabase, stopSampling, confirmAndClearDatabase,clearDatabase } from "./functions";
+import { handleStart,  stopSampling, confirmAndClearDatabase,clearDatabase } from "./functions";
+import { uploadDatabaseToS3} from "./functionsS3";
 import { showToastAsync } from "./functionsHelper";
 
 import  {VERSION} from "./constants";
@@ -28,11 +30,14 @@ export default function MainScreen() {
   const [dbFilePath, setDbFilePath] = useState(null);
   const [dbInitialized, setDbInitialized] = useState(false);
   const [deviceName, setDeviceName] = useState(null);
-  const [emailAddress, setEmailAddress] = useState("default@example.com");
   const [counter, setCounter] = useState(0);
   const [temperature, setTemperature] = useState(NaN);
   const [accuracy, setAccuracy] = useState(NaN);
   const [dummyState, setDummyState] = useState(0); // ✅ State used to trigger re-render
+  const [isFallbackConnection, setIsFallbackConnection] = useState(false);
+  const [settingsMissing, setSettingsMissing] = useState(false);
+  const navigation = useNavigation();
+
 
   const jobcodeRef = useRef(null);
   const locationRef = useRef(null);
@@ -50,36 +55,64 @@ export default function MainScreen() {
   const { width, height } = Dimensions.get("window");
   const logoWidth = width * 0.15;
   const logoHeight = height * 0.15;
-  const pixelRatio = PixelRatio.get();
+
   
-  
+
  
-  // ✅ Ensure the latest device name and email is fetched when screen is focused
-
-  useFocusEffect(
-    useCallback(() => {
-      const loadSettings = async () => {
-        try {
-          const storedDevice = await SecureStore.getItemAsync("bleDeviceName");
-          const storedEmail = await SecureStore.getItemAsync("emailAddress");
+  // ✅ Ensure the latest  campaignName and sensorNumber is fetched when screen is focused
+  useEffect(() => {
+    const checkStoredSettings = async () => {
+      try {
+        const storedCampaign = await SecureStore.getItemAsync("campaignName");
+        const storedSensor = await SecureStore.getItemAsync("sensorNumber");
   
-          console.log("Updated deviceName:", storedDevice || "No stored device");
-          console.log("Updated emailAddress:", storedEmail || "No stored email");
+        if (storedCampaign && storedSensor) {
+          const paddedSensor = storedSensor.padStart(3, "0");
+          const fullDeviceName = `${storedCampaign}_${paddedSensor}`;
+          setDeviceName(fullDeviceName);
+          setSettingsMissing(false);
   
-          setDeviceName(storedDevice || "");  // Ensure it doesn't break on null/undefined
-          setEmailAddress(storedEmail || "default@example.com");
-        } catch (error) {
-          console.error("Error loading settings:", error);
+          const currentDateTime = new Date()
+            .toLocaleString("sv-SE", { timeZoneName: "short" })
+            .replace(/[:\-.TZ]/g, "")
+            .slice(0, 15);
+  
+          jobcodeRef.current = `${fullDeviceName}-${currentDateTime}`;
+          console.log("✅ Device name and jobcode set:", fullDeviceName, jobcodeRef.current);
+        } else {
+          console.warn("⚠️ Missing campaignName or sensorNumber");
+          setSettingsMissing(true);
+          Alert.alert("Device Name Not Set", "Redirecting to Settings page.", [
+            { text: "OK", onPress: () => navigation.navigate("Settings") }
+          ]);
         }
-      };
+      } catch (error) {
+        console.error("❌ Error reading stored settings:", error);
+        setSettingsMissing(true);
+      }
+    };
   
-      loadSettings();
-    }, []) // ✅ Keep dependencies minimal to prevent unnecessary re-renders
-  );
+    checkStoredSettings();
+  }, []);
   
   
 
-
+  useEffect(() => {
+    if (isFallbackConnection) {
+      Alert.alert(
+        "Setup Required",
+        "This sensor is using the default BLE name. Please go to Settings to assign a unique name.",
+        [
+          {
+            text: "Go to Settings",
+            onPress: () => navigation.navigate("Settings"),
+          },
+          { text: "Cancel", style: "cancel" }
+        ]
+      );
+    }
+  }, [isFallbackConnection]);
+  
   // ✅ Open the database when the app loads
   useEffect(() => {
     const resetDatabase = async () => {
@@ -147,56 +180,12 @@ export default function MainScreen() {
     }
   }, [db]); // Runs only when `db` is set
   
-  useEffect(() => {
-    let isMounted = true; 
-    const initializeFilePath = async () => {
-      try {
-        console.log("Initializing file path...");
-        const storedName = await SecureStore.getItemAsync("bleDeviceName");
-        if (!isMounted) return;
-  
-        if (!storedName) {
-          Alert.alert("Device Name Not Set", "Redirecting to Settings page.");
-          return;
-        }
-  
-        const currentDateTime = new Date()
-          .toLocaleString("sv-SE", { timeZoneName: "short" })
-          .replace(/[:\-.TZ]/g, "")
-          .slice(0, 15);
-  
-        console.log(`Current dateTime: ${currentDateTime}`);
-        setDeviceName(storedName); // ✅ Ensures deviceName is updated 
-        const jobcodeName = `${storedName}-${currentDateTime}`;
-        jobcodeRef.current = jobcodeName;        
-      } catch (error) {
-        console.error("Error initializing file path:", error);
-      }
-    }; 
-    initializeFilePath(); 
-    return () => { isMounted = false };  // Cleanup function
-  }, [deviceName]);
 
 
 
-  // ✅ Load email address and device name when app loads
-  useEffect(() => {
-    const checkStoredSettings = async () => {
-      try {
-        const storedEmail = await SecureStore.getItemAsync("emailAddress");
-        console.log("Stored email on app load:", storedEmail);
-        setEmailAddress(storedEmail || "default@example.com");
 
-        const storedDevice = await SecureStore.getItemAsync("bleDeviceName");
-        console.log("Stored device on app load:", storedDevice);
-        if (storedDevice) setDeviceName(storedDevice);
-      } catch (error) {
-        console.error("Error reading stored settings:", error);
-      }
-    };
 
-    checkStoredSettings();
-  }, []);
+
 
   useKeepAwake(); // Prevents the screen from sleeping
 
@@ -206,125 +195,149 @@ export default function MainScreen() {
       <Text style={styles.header}>Climate Action Program</Text>
       <Text style={styles.title}>UHI Sensor</Text>
       <Text style={styles.version}>Version: {VERSION}</Text>
-
-    <Text style={styles.status}>
-        Sensor: {deviceName}{"\n"}
-        Email: {emailAddress}  {"\n"}   
-        Temperature: {(temperature * 9/5 + 32).toFixed(2)}°F {"\n"}
+  
+      <Text style={styles.status}>
+        Sensor: {deviceName || "(no name)"}{"\n"}
+        Temperature: {isNaN(temperature) ? "--" : `${(temperature * 9/5 + 32).toFixed(2)}°F`} {"\n"}
         GPS Accuracy: {String(accuracy)}m
+      </Text>
+  
+      <Text style={styles.temperature}>Counter: {counter}</Text>
+  
+      {isFallbackConnection && (
+        <View style={{ marginTop: 20, backgroundColor: '#fff3cd', padding: 10 }}>
+          <Text style={{ color: '#856404' }}>
+            ⚠️ Connected using default device name. Please assign a unique name in Settings.
+          </Text>
+        </View>
+      )}
+  
+  {settingsMissing && (
+  <View style={{ 
+    marginTop: 15, 
+    padding: 12, 
+    backgroundColor: "#ffebee", 
+    borderRadius: 6, 
+    alignItems: "center" 
+  }}>
+    <Text style={{ 
+      color: "#c62828", 
+      textAlign: "center", 
+      fontWeight: "bold", 
+      marginBottom: 10 
+    }}>
+      ⚠️ Missing campaign info. Please go to Settings to enter campaign name and sensor number.
     </Text>
+    <Button
+      title="Go to Settings"
+      onPress={() => navigation.navigate("Settings")}
+      buttonStyle={{ backgroundColor: "#c62828", paddingHorizontal: 20 }}
+      titleStyle={{ color: "white" }}
+    />
+  </View>
+)}
 
-      <Text style={styles.temperature}>Counter: {counter} </Text>
 
-      {/* Start button  color={isSamplingRef?.current || isScanningRef?.current ? "gray" : "red"} */}
-
-  <Button
-      title="Start"
-      containerStyle={{ width: '35%' }}
-      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
-      titleStyle={{ color: 'yellow' }}
-
+      {/* Start Button */}
+      <Button
+        title="Start"
+        containerStyle={{ width: '35%' }}
+        buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+        titleStyle={{ color: 'yellow' }}
         onPress={() => {
-        console.log("--> Start button pressed!", db, isScanningRef.current, isSamplingRef.current);
-        
-        handleStart(
-          db,
-          deviceName,
-          deviceRef,
-          isScanningRef,
-          isConnectedRef,
-          isIntentionalDisconnectRef,
-          characteristicsRef,
-          setCounter,
-          setTemperature,
-          setAccuracy,
-          isSamplingRef,
-          latestLocationRef,
-          locationRef,
-          isTrackingRef,
-          setDummyState
-        );
-      }}
-      disabled={isScanningRef.current || isSamplingRef.current}   
-/>
-
-{/* Stop button  color={isSamplingRef?.current ? "red" : "gray"}*/}
-<Button
-      title="Stop"
-      containerStyle={{ width: '35%' }}
-      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
-      titleStyle={{ color: 'yellow' }}
-      
-      onPress={() => {
-        console.log("Stop button pressed!", db, deviceRef.current);  
-        if (!deviceRef.current) {
-          console.warn("⚠️ Cannot stop sampling: No device connected.");
-          return;
-        }
-        stopSampling(
-                db, 
-                deviceRef, 
-                isScanningRef, 
-                isIntentionalDisconnectRef, 
-                isSamplingRef, 
-                isTrackingRef, 
-                setDummyState);
-      
-      }}
-      disabled={!isSamplingRef.current}  
-/>
-
-{/* Email .csv button color={isSamplingRef?.current ? "gray" : "red"} */}
-<Button
-      title={Platform.OS === 'ios' ? 'Email Data' : 'Share to Drive'}
-      containerStyle={{ width: '35%' }}
-      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
-      titleStyle={{ color: 'yellow' }}
-      onPress={() => {
-        emailDatabase(dbFilePath, jobcodeRef, emailAddress, isSamplingRef, setDummyState); // ✅ Call function   
-      }}
-      disabled={isSamplingRef.current} 
-/>      
-
-{/* Clear Data Rows button */}
-    <View style={{ marginBottom: 40 }}>
-        <Text> </Text> 
-    </View> 
-<Button
-  title="Clear Data"
-  containerStyle={{ width: '35%' }}
-      buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
-      titleStyle={{ color: 'yellow' }}
-  onPress={() => {confirmAndClearDatabase( 
-      db, 
-      setDummyState, 
-      setCounter, 
-      clearDatabase,
-      deviceRef, 
-      isScanningRef, 
-      isIntentionalDisconnectRef,
-      isSamplingRef,
-      isTrackingRef,
-    )   
-  }}
-/>
-
-{/* Logo */}
-<Image
-        source={require("./assets/icon.png")}
-        style={[
-          styles.logo,
-          {
-            width: logoWidth,
-            height: logoHeight
+          console.log("--> Start button pressed!", db, isScanningRef.current, isSamplingRef.current);
+          handleStart(
+            db,
+            deviceName,
+            deviceRef,
+            isScanningRef,
+            isConnectedRef,
+            isIntentionalDisconnectRef,
+            characteristicsRef,
+            setCounter,
+            setTemperature,
+            setAccuracy,
+            isSamplingRef,
+            latestLocationRef,
+            locationRef,
+            isTrackingRef,
+            setDummyState,
+            setIsFallbackConnection
+          );
+        }}
+        disabled={isScanningRef.current || isSamplingRef.current}
+      />
+  
+      {/* Stop Button */}
+      <Button
+        title="Stop"
+        containerStyle={{ width: '35%' }}
+        buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+        titleStyle={{ color: 'yellow' }}
+        onPress={() => {
+          console.log("Stop button pressed!", db, deviceRef.current);
+          if (!deviceRef.current) {
+            console.warn("⚠️ Cannot stop sampling: No device connected.");
+            return;
           }
-        ]}
+          stopSampling(
+            db,
+            deviceRef,
+            isScanningRef,
+            isIntentionalDisconnectRef,
+            isSamplingRef,
+            isTrackingRef,
+            setDummyState
+          );
+        }}
+        disabled={!isSamplingRef.current}
+      />
+  
+      {/* Upload Data Button */}
+      <Button
+        title="Upload Data"
+        containerStyle={{ width: '35%' }}
+        buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+        titleStyle={{ color: 'yellow' }}
+        onPress={() => {
+          uploadDatabaseToS3(dbFilePath, jobcodeRef, isSamplingRef, setDummyState);
+        }}
+        disabled={isSamplingRef.current}
+      />
+  
+      {/* Spacer and Clear Button */}
+      <View style={{ marginBottom: 40 }}><Text> </Text></View>
+      <Button
+        title="Clear Data"
+        containerStyle={{ width: '35%' }}
+        buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
+        titleStyle={{ color: 'yellow' }}
+        onPress={() => {
+          confirmAndClearDatabase(
+            db,
+            setDummyState,
+            setCounter,
+            clearDatabase,
+            deviceRef,
+            isScanningRef,
+            isIntentionalDisconnectRef,
+            isSamplingRef,
+            isTrackingRef
+          );
+        }}
+      />
+  
+      {/* Logo */}
+      <Image
+        source={require("./assets/icon.png")}
+        style={[styles.logo, { width: logoWidth, height: logoHeight }]}
         resizeMode="contain"
-/>
-<Text style={styles.questname}>Quest Science Center{"\n"}Livermore, CA</Text>
-
-</View>
+      />
+      <Text style={styles.questname}>Quest Science Center{"\n"}Livermore, CA</Text>
+    </View>
   );
+  
+
 }
 
 // ✅ Styles

@@ -1,20 +1,9 @@
 import * as FileSystem from 'expo-file-system';
 import * as SQLite from 'expo-sqlite/next';
 import { Alert, Platform } from 'react-native';
-import { showToastAsync } from './utils'; // Your custom toast function
-/*
+import { showToastAsync } from './utils';
+import { getPresignedS3Url } from './api';
 
-This is called when the user clicks the upload button.
-It uploads the database to S3 using a presigned URL.
-
-
-It first checks if the database file exists and if the user is sampling.
-It then checks if the jobcode and rownumber columns exist in the database.
-If they don't, it adds them.
-
-*/
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 export const uploadDatabaseToS3 = async (
   dbFilePath,
   jobcodeRef,
@@ -70,12 +59,38 @@ export const uploadDatabaseToS3 = async (
     const jobcode = jobcodeRef.current;
     const csvHeader = "rownumber,jobcode,Timestamp,Local Date,Local Time,Temperature (°C),Humidity (%),Latitude,Longitude,Altitude (m),Accuracy (m),Speed (MPH)\n";
     const csvBody = appData
-      .map(({ rownumber, jobcode, timestamp, temperature, humidity, latitude, longitude, altitude, accuracy, speed }) => {
-        const dateObj = new Date(timestamp);
+      .map((row) => {
+        const {
+          rownumber,
+          jobcode,
+          timestamp,
+          temperature,
+          humidity,
+          latitude,
+          longitude,
+          altitude,
+          accuracy,
+          speed
+        } = row;
+
+        const dateObj = new Date(timestamp ?? 0);
         const localDate = dateObj.toLocaleDateString();
-        const localTime = dateObj.toLocaleTimeString([], { hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const speedMph = ((speed * 1e-2) * 2.23694).toFixed(2);
-        return `${rownumber},${jobcode},${timestamp},${localDate},${localTime},${(temperature * 1e-2).toFixed(2)},${humidity.toFixed(1)},${(latitude * 1e-7).toFixed(6)},${(longitude * 1e-7).toFixed(6)},${(altitude * 1e-2).toFixed(2)},${(accuracy * 1e-2).toFixed(2)},${speedMph}`;
+        const localTime = dateObj.toLocaleTimeString([], {
+          hourCycle: 'h23',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+// Convert temperature, humidity, latitude, longitude, altitude, accuracy, and speed to safe formats to avoid errors with operations if NULL or undefined
+        const safeTemp = ((temperature ?? 0) * 1e-2).toFixed(2);
+        const safeHumidity = (humidity ?? 0).toFixed(1);
+        const safeLat = ((latitude ?? 0) * 1e-7).toFixed(6);
+        const safeLon = ((longitude ?? 0) * 1e-7).toFixed(6);
+        const safeAlt = ((altitude ?? 0) * 1e-2).toFixed(2);
+        const safeAcc = ((accuracy ?? 0) * 1e-2).toFixed(2);
+        const safeSpeed = (((speed ?? 0) * 1e-2) * 2.23694).toFixed(2);
+
+        return `${rownumber ?? ""},${jobcode ?? ""},${timestamp ?? ""},${localDate},${localTime},${safeTemp},${safeHumidity},${safeLat},${safeLon},${safeAlt},${safeAcc},${safeSpeed}`;
       })
       .join("\n");
 
@@ -83,15 +98,14 @@ export const uploadDatabaseToS3 = async (
     const shareablePath = FileSystem.cacheDirectory + `${jobcode}.csv`;
     await FileSystem.writeAsStringAsync(shareablePath, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
 
-    // ✅ Upload to S3 via presigned URL
     const uploadFilename = `${jobcode}_${Date.now()}.csv`;
-    const presignedUrl = await getPresignedS3Url(uploadFilename); // Call your backend
-
     const fileContent = await FileSystem.readAsStringAsync(shareablePath, {
       encoding: FileSystem.EncodingType.UTF8,
     });
 
-    const uploadResponse = await fetch(presignedUrl, {
+    const { uploadUrl, publicUrl } = await getPresignedS3Url(uploadFilename);
+
+    const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
         'Content-Type': 'text/csv',
@@ -104,6 +118,8 @@ export const uploadDatabaseToS3 = async (
     }
 
     console.log("✅ Upload successful:", uploadFilename);
+    console.log("🌐 Public URL:", publicUrl);
+
     await showToastAsync("File uploaded to cloud storage", 2000);
     await FileSystem.deleteAsync(shareablePath, { idempotent: true });
     await db.closeAsync();
@@ -114,10 +130,11 @@ export const uploadDatabaseToS3 = async (
 };
 
 
-///////////////////////////////////////////////////////////////////////////////////
-// api.js
 
-export async function getPresignedS3Url(filename) {
+///////////////////////////////////////////////////////////////////////////////////
+
+
+async function getPresignedS3Url(filename) {
     try {
       const response = await fetch('http://mobile.quest-science.net/get_presigned_url', {
         method: 'POST',

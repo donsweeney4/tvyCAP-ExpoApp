@@ -15,14 +15,15 @@ import {
 
 import * as SecureStore from "expo-secure-store";
 import { useNavigation } from "@react-navigation/native";
+import { bleWriteNameToESP32 } from "./functionsS3"; 
 
 export default function SettingsScreen() {
+  const [campaignName, setCampaignName] = useState("");
+  const [sensorNumber, setSensorNumber] = useState("");
   const [inputName, setInputName] = useState("");
-  const [inputEmail, setInputEmail] = useState("");
 
   const navigation = useNavigation();
 
-  //#1 Function to load settings from SecureStore
   const loadSettings = async () => {
     try {
       if (!(await SecureStore.isAvailableAsync())) {
@@ -30,11 +31,16 @@ export default function SettingsScreen() {
         return;
       }
 
-      const savedDeviceName = await SecureStore.getItemAsync("bleDeviceName");
-      const savedEmailAddress = await SecureStore.getItemAsync("emailAddress");
+      const savedName = await SecureStore.getItemAsync("bleDeviceName");
 
-      if (savedDeviceName) setInputName(savedDeviceName);
-      if (savedEmailAddress) setInputEmail(savedEmailAddress);
+      if (savedName) {
+        setInputName(savedName);
+        const parts = savedName.split("_");
+        if (parts.length === 2) {
+          setCampaignName(parts[0]);
+          setSensorNumber(parts[1].padStart(3, "0"));
+        }
+      }
     } catch (error) {
       console.error("Error loading settings from SecureStore:", error);
     }
@@ -44,47 +50,49 @@ export default function SettingsScreen() {
     loadSettings();
   }, []);
 
-  //#2 Function to save settings to SecureStore
   const saveSettings = async () => {
     try {
       Keyboard.dismiss();
   
-      console.log(`saveSettings: emailAddress: ${inputEmail} deviceName: ${inputName}`);
+      if (!campaignName || !sensorNumber) {
+        Alert.alert("Missing Info", "Please enter both campaign name and sensor number.");
+        return;
+      }
+  
+      const paddedSensor = sensorNumber.padStart(3, "0");
+      const newName = `${campaignName}_${paddedSensor}`;
+      setInputName(newName);
   
       if (!(await SecureStore.isAvailableAsync())) {
         Alert.alert("Error", "SecureStore is not available on this device.");
         return;
       }
   
-      // Split emails by comma and trim whitespace
-      const emailList = inputEmail.split(",").map(email => email.trim());
-  
-      // Validate each email
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const invalidEmails = emailList.filter(email => !emailRegex.test(email));
-  
-      if (invalidEmails.length > 0) {
-        Alert.alert("Invalid Email(s)", `Please correct: ${invalidEmails.join(", ")}`);
+      // Write the name to the ESP32 via BLE
+      const success = await bleWriteNameToESP32(newName);
+      if (!success) {
+        Alert.alert("Error", "Failed to update ESP32 name over BLE.");
         return;
       }
   
-      // Save as a comma-separated string
-      await SecureStore.setItemAsync("bleDeviceName", inputName);
-      await SecureStore.setItemAsync("emailAddress", emailList.join(","));
-  
-      Alert.alert("Success", "Settings updated successfully!", [
+      // Save locally
+      await SecureStore.setItemAsync("campaignName", campaignName);
+      await SecureStore.setItemAsync("sensorNumber", paddedSensor);
+      await SecureStore.setItemAsync("bleDeviceName", newName);
+
+      // Save to SQLite database (if applicable)
+      Alert.alert("Success", "ESP32 name updated!", [
         { text: "OK", onPress: loadSettings },
       ]);
   
       navigation.navigate("Main");
     } catch (error) {
-      console.error("Error saving settings:", error);
-      Alert.alert("Error", "Failed to save settings.");
+      console.error("❌ Error saving settings:", error);
+      Alert.alert("Error", "Failed to update settings.");
     }
   };
   
 
-  //#3. Return the UI
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -92,25 +100,32 @@ export default function SettingsScreen() {
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <Text style={styles.label}>Set BLE Device Name:</Text>
+          <Text style={styles.label}>Set Campaign Name:</Text>
           <TextInput
             style={styles.input}
-            value={inputName}
-            onChangeText={setInputName}
-            placeholder="Enter BLE Device Name"
+            value={campaignName}
+            onChangeText={setCampaignName}
+            placeholder="Enter Campaign Name"
             returnKeyType="done"
           />
 
-          <Text style={styles.label}>Set Email Address:</Text>
-          <TextInput
-            style={styles.input}
-            value={inputEmail}
-            onChangeText={setInputEmail}
-            placeholder="Enter Email Address"
-            keyboardType="email-address"
-          />
+          <Text style={styles.label}>Set Sensor Number:</Text>
+        <TextInput
+           style={styles.input}
+           value={sensorNumber}
+           onChangeText={(text) =>
+            setSensorNumber(text.replace(/[^0-9]/g, "").slice(0, 3))
+           }
+           placeholder="Enter Sensor Number"
+           keyboardType="numeric"
+        />
 
           <Button title="Save" onPress={saveSettings} />
+
+          <View style={styles.previewBox}>
+            <Text style={styles.previewText}>Current Setting:</Text>
+            <Text style={styles.previewName}>{inputName || "(none)"}</Text>
+          </View>
         </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
@@ -143,5 +158,18 @@ const styles = StyleSheet.create({
     borderColor: "#ccc",
     borderRadius: 5,
     marginBottom: 20,
+  },
+  previewBox: {
+    marginTop: 30,
+    alignItems: "center",
+  },
+  previewText: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  previewName: {
+    fontSize: 18,
+    color: "#007AFF",
+    marginTop: 5,
   },
 });
