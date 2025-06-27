@@ -2,7 +2,9 @@
   "expo": {
     "name": "TVYCAP_UHI",
     "slug": "dwsuhi-xvl-53v1jmdz-tegdkh",
-    "version": "4.0.0",
+    "version": "4.0.6",
+    "scheme": "tvycapuhi",
+    "developmentClient": {},
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,6 +14,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow location access while using the app."
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "org.quest-science.BLEScanner",
@@ -23,7 +33,6 @@
       }
     },
     "android": {
-
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

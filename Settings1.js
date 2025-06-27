@@ -3,24 +3,28 @@ import {
   View,
   Text,
   TextInput,
-  Button,
-  StyleSheet,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
   ScrollView,
   TouchableWithoutFeedback,
+  TouchableOpacity,
   Platform,
+  StyleSheet,
 } from "react-native";
 
 import * as SecureStore from "expo-secure-store";
 import { useNavigation } from "@react-navigation/native";
-import { bleWriteNameToESP32 } from "./functionsS3"; 
+import { GetPairedSensorName, clearDatabase } from "./functions";
+import { showToastAsync } from "./functionsHelper";
 
 export default function SettingsScreen() {
+  const [isPressed, setIsPressed] = useState(false);
   const [campaignName, setCampaignName] = useState("");
-  const [sensorNumber, setSensorNumber] = useState("");
-  const [inputName, setInputName] = useState("");
+  const [campaignSensorNumber, setCampaignSensorNumber] = useState("");
+  const [sensorPaired, setSensorPaired] = useState(false);
+  const [dummyState, setDummyState] = useState(0);
+  const [counter, setCounter] = useState(0);
 
   const navigation = useNavigation();
 
@@ -31,16 +35,11 @@ export default function SettingsScreen() {
         return;
       }
 
-      const savedName = await SecureStore.getItemAsync("bleDeviceName");
+      const campaignName = await SecureStore.getItemAsync("campaignName");
+      const campaignSensorNumber = await SecureStore.getItemAsync("campaignSensorNumber");
 
-      if (savedName) {
-        setInputName(savedName);
-        const parts = savedName.split("_");
-        if (parts.length === 2) {
-          setCampaignName(parts[0]);
-          setSensorNumber(parts[1].padStart(3, "0"));
-        }
-      }
+      if (campaignName) setCampaignName(campaignName);
+      if (campaignSensorNumber) setCampaignSensorNumber(campaignSensorNumber);
     } catch (error) {
       console.error("Error loading settings from SecureStore:", error);
     }
@@ -50,89 +49,137 @@ export default function SettingsScreen() {
     loadSettings();
   }, []);
 
+  const writeWithRetry = async (key, value, retries = 3) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      await SecureStore.setItemAsync(key, value);
+      const verify = await SecureStore.getItemAsync(key);
+      if (verify === value) {
+        console.log(`✅ ${key} saved successfully on attempt ${attempt}`);
+        return true;
+      }
+      console.warn(`⏳ Retry ${attempt} failed for ${key}`);
+      await new Promise((res) => setTimeout(res, 300));
+    }
+    console.error(`❌ Failed to save ${key} after ${retries} attempts`);
+    return false;
+  };
+
   const saveSettings = async () => {
     try {
       Keyboard.dismiss();
-  
-      if (!campaignName || !sensorNumber) {
-        Alert.alert("Missing Info", "Please enter both campaign name and sensor number.");
+
+      if (!campaignName || !campaignSensorNumber) {
+        showToastAsync("Missing Info \n Enter both campaign name and campaign sensor number.", 2000);
         return;
       }
-  
-      const paddedSensor = sensorNumber.padStart(3, "0");
-      const newName = `${campaignName}_${paddedSensor}`;
-      setInputName(newName);
-  
+
+      if (campaignName.includes("_")) {
+        showToastAsync("❌ Campaign name cannot contain underscores (_)", 3000);
+        return;
+      }
+
+      const paddedSensor = campaignSensorNumber.padStart(3, "0");
+
       if (!(await SecureStore.isAvailableAsync())) {
         Alert.alert("Error", "SecureStore is not available on this device.");
         return;
       }
-  
-      // Write the name to the ESP32 via BLE
-      const success = await bleWriteNameToESP32(newName);
-      if (!success) {
-        Alert.alert("Error", "Failed to update ESP32 name over BLE.");
+
+      const saved1 = await writeWithRetry("campaignName", campaignName);
+      const saved2 = await writeWithRetry("campaignSensorNumber", paddedSensor);
+
+      if (!saved1 || !saved2) {
+        showToastAsync("❌ Failed to save settings", 3000);
         return;
       }
-  
-      // Save locally
-      await SecureStore.setItemAsync("campaignName", campaignName);
-      await SecureStore.setItemAsync("sensorNumber", paddedSensor);
-      await SecureStore.setItemAsync("bleDeviceName", newName);
 
-      // Save to SQLite database (if applicable)
-      Alert.alert("Success", "ESP32 name updated!", [
-        { text: "OK", onPress: loadSettings },
-      ]);
-  
-      navigation.navigate("Main");
+      await clearDatabase(setDummyState, setCounter);
+      showToastAsync("✅ Settings saved!", 2000);
+      navigation.goBack();
+
     } catch (error) {
       console.error("❌ Error saving settings:", error);
-      Alert.alert("Error", "Failed to update settings.");
+      showToastAsync("Failed to update settings.", 2000);
     }
   };
-  
+
+  const pairNewSensor = async () => {
+    try {
+      const success = await GetPairedSensorName();
+      if (success) {
+        setSensorPaired(true);
+        showToastAsync("New sensor paired successfully", 3000);
+      } else {
+        setSensorPaired(false);
+        showToastAsync("Failed to pair with a new sensor.", 2000);
+      }
+    } catch (error) {
+      console.error("❌ Error pairing new sensor:", error);
+      setSensorPaired(false);
+      showToastAsync("An unexpected error occurred.", 2000);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
+      {sensorPaired && (
+        <View style={styles.sensorStatus}>
+          <Text style={styles.sensorStatusText}>✅ Sensor Paired!</Text>
+        </View>
+      )}
+
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <Text style={styles.label}>Set Campaign Name:</Text>
+          <TouchableOpacity
+            style={[styles.saveButton, { marginBottom: 45 }, isPressed && styles.saveButtonPressed]}
+            onPressIn={() => setIsPressed(true)}
+            onPressOut={() => setIsPressed(false)}
+            onPress={pairNewSensor}
+          >
+            <Text style={[styles.saveButtonText, isPressed && styles.saveButtonTextPressed]}>
+              Pair New Temperature Sensor
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.label}>Set New Campaign Name:</Text>
           <TextInput
             style={styles.input}
             value={campaignName}
             onChangeText={setCampaignName}
-            placeholder="Enter Campaign Name"
+            placeholder="Campaign Name"
             returnKeyType="done"
           />
 
-          <Text style={styles.label}>Set Sensor Number:</Text>
-        <TextInput
-           style={styles.input}
-           value={sensorNumber}
-           onChangeText={(text) =>
-            setSensorNumber(text.replace(/[^0-9]/g, "").slice(0, 3))
-           }
-           placeholder="Enter Sensor Number"
-           keyboardType="numeric"
-        />
+          <Text style={styles.label}>Set New Integer Sensor Number:</Text>
+          <TextInput
+            style={styles.input}
+            value={campaignSensorNumber}
+            onChangeText={(text) =>
+              setCampaignSensorNumber(text.replace(/[^0-9]/g, "").slice(0, 3))
+            }
+            placeholder="Your Campaign Member Number"
+            keyboardType="numeric"
+          />
 
-          <Button title="Save" onPress={saveSettings} />
-
-          <View style={styles.previewBox}>
-            <Text style={styles.previewText}>Current Setting:</Text>
-            <Text style={styles.previewName}>{inputName || "(none)"}</Text>
-          </View>
+          <TouchableOpacity
+            style={[styles.saveButton, isPressed && styles.saveButtonPressed]}
+            onPressIn={() => setIsPressed(true)}
+            onPressOut={() => setIsPressed(false)}
+            onPress={saveSettings}
+          >
+            <Text style={[styles.saveButtonText, isPressed && styles.saveButtonTextPressed]}>
+              Save
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }
 
-///////////////////////////
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -159,17 +206,45 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     marginBottom: 20,
   },
-  previewBox: {
-    marginTop: 30,
+  saveButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 10,
+    marginTop: 20,
     alignItems: "center",
   },
-  previewText: {
-    fontSize: 16,
+  saveButtonPressed: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#007AFF",
+  },
+  saveButtonText: {
+    color: "yellow",
+    fontSize: 18,
     fontWeight: "bold",
   },
-  previewName: {
-    fontSize: 18,
-    color: "#007AFF",
-    marginTop: 5,
+  saveButtonTextPressed: {
+    color: "black",
+  },
+  sensorStatus: {
+    position: "absolute",
+    top: 10,
+    alignSelf: "center",
+    backgroundColor: "#e0ffe0",
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    borderRadius: 10,
+    zIndex: 10,
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  sensorStatusText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "green",
   },
 });

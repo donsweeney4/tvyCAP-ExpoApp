@@ -4,12 +4,10 @@ import { Dimensions } from 'react-native';
 const screenHeight = Dimensions.get('window').height; // Get screen height
 
 export const showToastAsync = (message, duration = 3000) => {
-    
+
   return new Promise((resolve) => {
-    let toastDuration = duration >= 3500 ? Toast.durations.LONG : Toast.durations.SHORT;
-    // ✅ Call Toast.show() correctly
     Toast.show(message, {
-      duration: toastDuration, // Duration in milliseconds
+      duration: duration, // Directly use the provided duration
       position: screenHeight * 0.15, // 15% from the top
       shadow: true,
       animation: true,
@@ -27,7 +25,7 @@ export const showToastAsync = (message, duration = 3000) => {
       },
     });
 
-    // ✅ Resolve the promise after the toast duration
+    // ✅ Resolve the promise after the provided duration
     setTimeout(resolve, duration);
   });
 };

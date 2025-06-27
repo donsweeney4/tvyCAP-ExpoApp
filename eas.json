@@ -15,7 +15,7 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk"  // For direct APK sharing/testing outside Play Store
       },
       "ios": {}
     },
@@ -23,7 +23,7 @@
       "distribution": "store",
       "android": {
           "image": "latest",
-          "buildType": "apk",
+          "buildType": "app-bundle",  // Use app-bundle for Play Store
           "autoIncrement": true
         },
       
