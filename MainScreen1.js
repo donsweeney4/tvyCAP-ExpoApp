@@ -22,7 +22,15 @@ import { uploadDatabaseToS3 } from "./functionsS3";
 import { showToastAsync } from "./functionsHelper";
 import { VERSION } from "./constants";
 
-export default function MainScreen() {
+
+
+
+
+
+
+export default function MainScreen1() {
+  
+  
 
   const [deviceName, setDeviceName] = useState(null);
   const [counter, setCounter] = useState(0);
@@ -93,17 +101,33 @@ export default function MainScreen() {
 
     return unsubscribe;
   }, [navigation]);
-  
-  useEffect(() => {
-    Toast.show("🍎 iOS Debug Toast Test", {
+
+
+
+useEffect(() => {
+  console.log("📢 About to show toast...");
+    setTimeout(() => {
+    Toast.show('This is a test toast', {
       duration: Toast.durations.LONG,
-      position: Toast.positions.CENTER,
-      shadow: false,
-      animation: true,
-      hideOnPress: true,
-      delay: 0
+      position: Toast.positions.TOP,
+      containerStyle: {
+        backgroundColor: 'black',
+        zIndex: 9999,
+        elevation: 9999,
+      },
+      textStyle: {
+        color: 'white',
+        fontSize: 16,
+      },
     });
+   }, 100);
   }, []);
+
+
+
+
+
+
 
 
 
