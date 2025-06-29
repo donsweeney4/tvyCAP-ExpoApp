@@ -204,7 +204,7 @@ export default function MainScreen() {
         }}
       />
 
-       {/* --- MOVED ICON DISPLAY BLOCK HERE --- */}
+     
       {iconVisible && (
         <View style={styles.iconContainer}>
           {iconType === 'red' && (
@@ -215,7 +215,7 @@ export default function MainScreen() {
           )}
         </View>
       )}
-      {/* --- END MOVED ICON DISPLAY BLOCK --- */}
+   
 
       <Image
         source={require("./assets/icon.png")}
