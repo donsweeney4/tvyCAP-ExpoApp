@@ -4,8 +4,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import MainScreen from './MainScreen1';
 import SettingsScreen from './Settings1'; // Import the Settings screen
 
-// --- IMPORTANT: Import ToastContainer here ---
-import ToastContainer from 'react-native-root-toast/lib/ToastContainer';
 
 if (!__DEV__) {
   console.log = () => {};  // Disable all console logs in production
@@ -25,8 +23,7 @@ export default function App() { // This 'App' component is your actual root
         </Tab.Navigator>
       </NavigationContainer>
 
-      {/* --- RENDER THE TOASTCONTAINER HERE --- */}
-      <ToastContainer />
+  
     </>
   );
 }

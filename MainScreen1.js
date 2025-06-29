@@ -12,7 +12,8 @@ import { useNavigation } from "@react-navigation/native";
 import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import { Button } from 'react-native-elements';
-import Icon from 'react-native-vector-icons/MaterialIcons'; // <--- NEW: Import Icon component
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import Toast from 'react-native-root-toast'; // <--- NEW: Import Icon component
 
 
 import { bleState } from "./utils/bleState";
@@ -92,6 +93,18 @@ export default function MainScreen() {
 
     return unsubscribe;
   }, [navigation]);
+  
+  useEffect(() => {
+    Toast.show("🍎 iOS Debug Toast Test", {
+      duration: Toast.durations.LONG,
+      position: Toast.positions.CENTER,
+      shadow: false,
+      animation: true,
+      hideOnPress: true,
+      delay: 0
+    });
+  }, []);
+
 
 
 

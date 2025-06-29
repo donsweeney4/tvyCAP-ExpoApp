@@ -7,7 +7,7 @@ export const showToastAsync = (message, duration = 3000) => {
   return new Promise((resolve) => {
     Toast.show(message, {
       duration: duration,
-      position: screenHeight * 0.15,
+       position: Toast.positions.CENTER, 
       shadow: true,
       animation: true,
       hideOnPress: true,
