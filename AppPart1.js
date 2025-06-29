@@ -1,9 +1,9 @@
+// App.js (Main entry point)
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import MainScreen from './MainScreen1';
 import SettingsScreen from './Settings1'; // Import the Settings screen
-
 
 if (!__DEV__) {
   console.log = () => {};  // Disable all console logs in production
@@ -13,17 +13,17 @@ if (!__DEV__) {
 
 const Tab = createBottomTabNavigator();
 
-export default function App() { // This 'App' component is your actual root
+export default function App() {
   return (
-    <> {/* Use a Fragment here to wrap both the NavigationContainer and ToastContainer */}
-      <NavigationContainer>
-        <Tab.Navigator>
-          <Tab.Screen name="Main" component={MainScreen} />
-          <Tab.Screen name="Settings" component={SettingsScreen} />
-        </Tab.Navigator>
-      </NavigationContainer>
-
-  
-    </>
+    <NavigationContainer>
+      <Tab.Navigator>
+        <Tab.Screen name="Main" component={MainScreen} />
+        <Tab.Screen name="Settings" component={SettingsScreen} />
+      </Tab.Navigator>
+    </NavigationContainer>
   );
 }
+
+
+
+
