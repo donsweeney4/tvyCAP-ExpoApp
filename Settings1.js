@@ -15,7 +15,7 @@ import {
 
 import * as SecureStore from "expo-secure-store";
 import { useNavigation } from "@react-navigation/native";
-import { GetPairedSensorName, clearDatabase } from "./functions";
+import { GetPairedSensorName, openDatabaseConnection, clearDatabase } from "./functions";
 import { showToastAsync } from "./functionsHelper";
 
 export default function SettingsScreen() {
@@ -93,14 +93,42 @@ export default function SettingsScreen() {
         return;
       }
 
-      await clearDatabase(setDummyState, setCounter);
-      showToastAsync("✅ Settings saved!", 2000);
-      navigation.goBack();
+
+// --- Settings are saved to SecureStore. Now handle database clearing ---
+
+      try {
+          // Ensure the database connection is open and tables are created/verified
+          const db = await openDatabaseConnection(); // This will open if not open, and ensure table exists
+          await clearDatabase(setDummyState, setCounter); // This function should handle clearing the database
+          console.log("Database cleared successfully after settings save.");
+          showToastAsync("✅ Settings saved and data cleared, if any!", 2000);
+
+      } catch (dbError) {
+          // This catch block specifically handles errors from openDatabaseConnection or clearDatabase
+          console.error("❌ Error during database operation after settings save:", dbError);
+          // Inform the user that settings were saved, but old data might remain or DB is messed up
+          showToastAsync("✅ Settings saved, but failed to clear old data.", 4000);
+          // Decide if you want to navigate back or stay.
+          // If clearing is *absolutely critical* for a "fresh start" with new settings,
+          // you might choose NOT to navigate back and force user attention to the error.
+          // Otherwise, proceed.
+      }
+
+      // Always navigate back and show success for the overall setting save,
+      // unless the database error is critical enough to halt the process.
+      // If `showToastAsync("✅ Settings saved and old data cleared!", 2000);` is above,
+      // you might not need this final toast here.
+      // If the `dbError` catch block executes, the user gets a different toast.
+      if (!dbError) { // Only navigate back if no database error, or if you decide it's okay to proceed
+        navigation.goBack();
+      }
 
     } catch (error) {
-      console.error("❌ Error saving settings:", error);
+      // This catch block handles errors from SecureStore operations or initial validation
+      console.error("❌ Error saving settings (SecureStore/initial validation):", error);
       showToastAsync("Failed to update settings.", 2000);
     }
+  
   };
 
   const pairNewSensor = async () => {

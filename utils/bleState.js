@@ -9,7 +9,7 @@ export const bleState = {
   isIntentionalDisconnectRef: { current: false },
   locationRef: null,
   lastWriteTimestampRef: { current: 0 }, // Include in bleState
-  lastErrorToastTimestampRef: { current: 0 }, // <-- Fix: Removed the extra comma here
+  lastErrorToastTimestampRef: { current: 0 }, 
   setDummyState: () => {},  // Placeholder to prevent undefined errors
   dbRef: { current: null }, // <-- New: Add a ref for your database instance
 };
