@@ -123,19 +123,6 @@ export default function MainScreen() {
 
       <Text style={styles.temperature}>Counter: {counter}</Text>
 
-      {/* --- NEW ICON DISPLAY BLOCK --- */}
-      {iconVisible && (
-        <View style={styles.iconContainer}>
-          {iconType === 'red' && (
-            <Icon name="error" size={50} color="red" />
-          )}
-          {iconType === 'green' && (
-            <Icon name="check-circle" size={50} color="green" />
-          )}
-        </View>
-      )}
-      {/* --- END NEW ICON DISPLAY BLOCK --- */}
-
       <Button
         title="Start"
         containerStyle={{ width: '35%', marginBottom: 12 }}
@@ -198,6 +185,20 @@ export default function MainScreen() {
           uploadDatabaseToS3(currentDbFilePath, jobcodeRef, deviceNameRef);
         }}
       />
+
+      {/* --- MOVED ICON DISPLAY BLOCK HERE --- */}
+      {iconVisible && (
+        <View style={styles.iconContainer}>
+          {iconType === 'red' && (
+            <Icon name="error" size={50} color="red" />
+          )}
+          {iconType === 'green' && (
+            <Icon name="check-circle" size={50} color="green" />
+          )}
+        </View>
+      )}
+      {/* --- END MOVED ICON DISPLAY BLOCK --- */}
+
 
       <View style={{ marginBottom: 40 }}><Text> </Text></View>
       <Button

@@ -1,7 +1,9 @@
 import { registerRootComponent } from 'expo';
 
 //import App from './AppPart0';
+
 import App from './AppPart1';
+
 //import App from './LocationTestScreen';
 
 

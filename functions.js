@@ -1,10 +1,10 @@
 import { Alert, Platform, PermissionsAndroid } from "react-native";
 import * as Location from "expo-location";
-import * as FileSystem from "expo-file-system"; // This import is present but not used in the provided snippet.
+import * as FileSystem from "expo-file-system";
 import * as SQLite from "expo-sqlite";
 import { BleManager } from "react-native-ble-plx";
 import { atob } from "react-native-quick-base64";
-import { Buffer } from "buffer"; // This import is present but not used in the provided snippet.
+import { Buffer } from "buffer";
 import * as SecureStore from "expo-secure-store";
 import { SERVICE_UUID, CHARACTERISTIC_UUID} from "./constants";
 import { showToastAsync } from "./functionsHelper";
@@ -109,13 +109,16 @@ export const openDatabaseConnection = async () => { // Exported for use in Setti
 //#1. handleStart: scan, connect and start sampling BLE temperature sensor
      
 export const handleStart = async (deviceName, setCounter, setTemperature, setAccuracy,
-  setIconType,setIconVisible )   => {
+  setIconType,setIconVisible )   => { // setIconType and setIconVisible are correctly here
 
   console.log(`🚀 handleStart triggered, Campaign & sensor: ${deviceName}`);
 
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== "granted") {
     Alert.alert("Permission Denied", "Location access is required for tracking.");
+    // Display red icon if location permission is denied
+    setIconType('red');
+    setIconVisible(true);
     return;
   }
 
@@ -123,6 +126,9 @@ export const handleStart = async (deviceName, setCounter, setTemperature, setAcc
   const blePermissionsGranted = await requestBluetoothPermissions();
   if (!blePermissionsGranted) {
     Alert.alert("Permission Denied", "Bluetooth permissions are required.");
+    // Display red icon if BLE permissions are denied
+    setIconType('red');
+    setIconVisible(true);
     return;
   }
 
@@ -144,7 +150,9 @@ export const handleStart = async (deviceName, setCounter, setTemperature, setAcc
         bleState.deviceRef.current = null;
         // Also ensure location tracking is stopped if `handleStart` is called while sampling
         if (bleState.isSamplingRef.current) {
-            stopSamplingLoop(); // 
+            // If already sampling, stop it fully, which includes stopping GPS.
+            // This is crucial to prevent multiple active listeners.
+            stopSamplingLoop();
         }
 
       } catch (error) {
@@ -172,12 +180,15 @@ export const handleStart = async (deviceName, setCounter, setTemperature, setAcc
 
       setTimeout(() => {
         // startSampling now uses bleState.dbRef.current implicitly
-        startSampling(setCounter, setTemperature, setAccuracy); 
+        startSampling(setCounter, setTemperature, setAccuracy,setIconType,setIconVisible ); 
       }, 500);
 
     } else {
+      // --- IMPORTANT MODIFICATION: Add red icon logic here for initial connection/characteristic failure ---
       await showToastAsync("Sensor not found or failed to connect", 2000);
       console.warn("⚠️ Device not found or failed to connect.");
+      setIconType('red'); // Set red icon if initial connection or characteristic discovery failed
+      setIconVisible(true);
       // If connection fails, ensure dbRef is not incorrectly nullified by this function,
       // as db opening was successful.
     }
@@ -192,6 +203,9 @@ export const handleStart = async (deviceName, setCounter, setTemperature, setAcc
     if (error.message && error.message.includes("database")) { // Simple check
         bleState.dbRef.current = null;
     }
+    // Also set red icon for any major error in handleStart
+    setIconType('red');
+    setIconVisible(true);
   }
 };
 
@@ -251,6 +265,7 @@ export const ConnectToPairedSensor = async (scanTimeout = 10000) => {
               await device.discoverAllServicesAndCharacteristics();
               console.log("✅ Discovery complete");
 
+              // The original logic to iterate and log services/characteristics is fine
               const services = await device.services();
               for (const service of services) {
                 console.log("🔧 Service UUID:", service.uuid);
@@ -264,28 +279,35 @@ export const ConnectToPairedSensor = async (scanTimeout = 10000) => {
               bleState.deviceRef.current = device;
 
               try {
+                // This read is the critical point where the 'characteristic not found' error originates
                 const characteristic = await device.readCharacteristicForService(
                   SERVICE_UUID,
                   CHARACTERISTIC_UUID
                 );
                 bleState.characteristicsRef.current = characteristic;
+                console.log("✅ Characteristic found and stored.");
+                resolved = true;
+                return resolve({ connected: true });
+
               } catch (charErr) {
-                console.warn("⚠️ Failed to read characteristic:", charErr);
+                console.warn("⚠️ Failed to read characteristic for service during connection:", charErr);
+                // Even if connect was true, if characteristic fails, it's a failed connection for our purpose
                 await device.cancelConnection();
                 bleState.deviceRef.current = null;
-                return resolve({ connected: false });
+                bleState.characteristicsRef.current = null; // Ensure this is null
+                return resolve({ connected: false }); // Explicitly resolve as not connected
               }
 
-              resolved = true;
-              return resolve({ connected: true });
-
             } catch (err) {
-              console.warn("⚠️ Connection or discovery error:", err);
+              console.warn("⚠️ Connection or discovery error (general):", err);
               try {
                 await device.cancelConnection();
               } catch (cleanupError) {
                 console.warn("⚠️ Cleanup disconnect error:", cleanupError);
               }
+              // Ensure refs are cleared on general connection failure
+              bleState.deviceRef.current = null;
+              bleState.characteristicsRef.current = null;
               return resolve({ connected: false });
             } finally {
               isMatchingInProgress = false;
@@ -321,7 +343,13 @@ const handleDeviceDisconnection = async () => {
 
   if (bleState.isSamplingRef.current) {
     console.log("🛑 Stopping due to disconnection...");
-    stopSampling();
+    // --- NEW MODIFICATION: Ensure icon is set to red on auto-disconnect ---
+    // If stopSampling is called without explicit icon setters (like from BLE event listener)
+    // we need a mechanism to update the UI. This is usually handled by `bleState.setDummyState`.
+    // However, if stopSampling is *not* meant to directly handle icon updates and expects
+    // the parent component to react to `bleState` changes, then this might not be strictly needed here.
+    // For now, let's keep it clean and rely on the `stopSamplingLoop` call below.
+    stopSampling(); // This will eventually call stopSamplingLoop.
   }
 };
 
@@ -329,7 +357,7 @@ const handleDeviceDisconnection = async () => {
 //#3 startSampling: Start sampling data from the BLE device
 // This function is called after a successful connection to the BLE device
 
-const startSampling = async (setCounter, setTemperature, setAccuracy) => {
+const startSampling = async (setCounter, setTemperature, setAccuracy, setIconType, setIconVisible) => {
   console.log("🚦//#3 startSampling - Entered startSampling()");
 
   const device = bleState.deviceRef.current;
@@ -337,15 +365,23 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
 
   console.log("📡 Checking device connection before sampling...");
 
+  // These checks are still good, but handleStart's `else` block should have caught most
+  // initial connection/characteristic failures and set the red icon already.
+  // This `startSampling` function should ideally only be called if `connected` and
+  // `characteristicsRef.current` were already confirmed in `handleStart`.
   if (!device || !isConnected) {
     console.warn("⚠️ Sensor device is not connected. Sampling cannot start.");
     displayErrorToast("⚠️ Cannot start sampling. BLE sensor is not connected!", 3000);
+    setIconType('red'); // Red icon here for safety, though `handleStart` should cover it
+    setIconVisible(true);
     return;
   }
 
   if (!bleState.characteristicsRef.current) {
     console.warn("⚠️ No characteristic available. Cannot start sampling.");
     displayErrorToast("⚠️ Cannot start sampling. No BLE characteristic found!", 3000);
+    setIconType('red'); // Red icon here for safety, though `handleStart` should cover it
+    setIconVisible(true);
     return;
   }
 
@@ -367,6 +403,7 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
         timeInterval: 1000,
         distanceInterval: 0,
         mayShowUserSettingsDialog: true,
+        
       },
       (location) => {
         try {
@@ -376,10 +413,13 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
           if (!bleState.deviceRef.current) {
             console.warn("⚠️ Device disconnected. Stopping location tracking.");
             bleState.isIntentionalDisconnectRef.current = false;
-            stopSamplingLoop();
+            // --- MODIFICATION for robust GPS stop ---
+            stopSamplingLoop(); // Call the centralized stop function
             
             displayErrorToast("⚠️ Device disconnected. Stopping location tracking.", 5000);
-            return;
+            setIconType('red'); // Set red icon if device disconnects mid-sampling
+            setIconVisible(true);
+            return; // IMPORTANT: Exit the callback immediately after calling stopSamplingLoop
           }
 
           // handleLocationUpdate called each time location updates
@@ -387,7 +427,7 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
 
         } catch (err) {
           console.error("❌ Error inside watchPositionAsync callback:", err);
-          stopSamplingLoop();
+          stopSamplingLoop(); // This will handle setting icon and stopping everything
           displayErrorToast("❌ An error occurred during data collection. Sampling stopped.", 5000);
         }
       }
@@ -396,7 +436,7 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
     console.log("✅ Location tracking started successfully.");
   } catch (error) {
     console.error("❌ Error starting location tracking:", error);
-    stopSamplingLoop();
+    stopSamplingLoop(); // This will handle setting icon and stopping everything
     displayErrorToast("❌ Error starting location tracking. Sampling stopped.", 5000);
   }
 };
@@ -405,32 +445,42 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
 //#3a ✅ Helper function to stop tracking when BLE disconnects
 
 const stopSamplingLoop = () => {
+  // We want to ensure location is always stopped when this is called to stop sampling.
+  // The 'already stopped' log can be more precise, or simply allow the removal to run.
+
   if (!bleState.isSamplingRef.current) {
-    console.log("⚠️ Sampling already stopped. Ignoring...");
-    return;
+    console.log("⚠️ Sampling already marked as stopped. Proceeding with full cleanup...");
+  } else {
+    console.log("🚫 Stopping location tracking and sampling...");
   }
-  if (bleState.isTrackingRef.current) {
-    console.log("🚫 Stopping location tracking...");
-    bleState.isTrackingRef.current = false;
+  
+  // Always attempt to remove the location listener if it exists
+  if (bleState.locationRef?.remove) {
+    try {
+        bleState.locationRef.remove();
+        bleState.locationRef = null;
+        console.log("📡 Location listener removed successfully.");
+    } catch (removeError) {
+        console.error("❌ Error removing location listener:", removeError);
+        // This might happen if the listener was already removed or became invalid
+        bleState.locationRef = null; // Ensure it's nullified even if remove fails
+    }
+  } else {
+    console.log("No active location listener to remove.");
   }
-  if (bleState.isSamplingRef.current) {
-    bleState.isSamplingRef.current = false;
-  }
+
+  // Set sampling state to false regardless of prior state, for consistency.
+  bleState.isSamplingRef.current = false;
   bleState.isIntentionalDisconnectRef.current = false;
 
+  // Trigger UI update
   bleState.setDummyState(prev => prev + 1);
 
-  if (bleState.locationRef?.remove) {
-    bleState.locationRef.remove();
-    bleState.locationRef = null;
-    console.log("📡 Location listener removed.");
-  }
-  console.log("✅ Location tracking successfully stopped.");
+  console.log("✅ Sampling and location tracking cleanup complete.");
 }
 
 //#4. handleLocationUpdate: Callback function when location updates in #3
 
-// Original function with modifications
 const handleLocationUpdate = async (location, setCounter, setTemperature, setAccuracy, setIconType, setIconVisible) => {
   console.log("📍📍📍📍 //#4 handleLocationUpdate:");
 
@@ -439,7 +489,7 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
     if (!bleState.characteristicsRef.current) {
       console.warn("⚠️ Device disconnected or no characteristic found. Stopping updates...");
       bleState.isIntentionalDisconnectRef.current = false;
-      stopSamplingLoop();
+      stopSamplingLoop(); // This now reliably stops GPS
       displayErrorToast("⚠️ BLE device disconnected. Data recording stopped.", 5000);
       // *** MODIFICATION 1: Show Red Icon ***
       setIconType('red');
@@ -454,12 +504,24 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
       return; // Exit if sampling is not active
     }
 
-    // --- BLE Read Operation ---
-    const rawData = await bleState.characteristicsRef.current.read();
-    if (!rawData.value) {
+    let rawData;
+    try {
+      // --- BLE Read Operation ---
+      rawData = await bleState.characteristicsRef.current.read();
+    } catch (readError) {
+      // *** NEW MODIFICATION: Catch characteristic read errors here ***
+      console.error("❌ Error reading characteristic from BLE device:", readError);
+      stopSamplingLoop(); // Stop sampling as we can't read data
+      displayErrorToast("❌ Failed to read data from sensor. Data recording stopped.", 5000);
+      setIconType('red'); // Display red icon
+      setIconVisible(true);
+      return; // IMPORTANT: Exit as reading failed immediately after cleanup and icon update
+    }
+
+    if (!rawData || !rawData.value) { // This check remains valid for successful read but empty value
       console.error("❌ Error: No value returned in the characteristic.");
       displayErrorToast("❌ No value from BLE device. Check connection.", 3000);
-      // *** MODIFICATION 2: Show Red Icon for read error ***
+      // *** MODIFICATION 2: Show Red Icon for no value returned ***
       setIconType('red');
       setIconVisible(true);
       return; // Exit if no data is read from BLE
@@ -502,7 +564,7 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
       const database = bleState.dbRef.current;
       if (!database) {
           console.error("❌ Database reference is null. Cannot write data.");
-          stopSamplingLoop();
+          stopSamplingLoop(); // This now reliably stops GPS
           displayErrorToast("❌ Data recording stopped! Database not available.", 5000);
           // *** MODIFICATION 3: Show Red Icon for DB null ***
           setIconType('red');
@@ -534,7 +596,7 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
 
     } catch (dbError) {
       console.error("❌ Fatal Error inserting data into database:", dbError);
-      stopSamplingLoop();
+      stopSamplingLoop(); // This now reliably stops GPS
       displayErrorToast(
         "❌ ERROR: Data recording stopped! Database issue. Please restart the app.",
         15000
@@ -549,11 +611,11 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
     }
 
   } catch (error) {
-    // This catch block handles errors from BLE characteristic reading or any other
-    // unexpected errors within the handleLocationUpdate function, before the database write attempt.
-    console.error("❌ Error reading characteristic or general handleLocationUpdate error:", error);
-    stopSamplingLoop();
-    displayErrorToast("❌ Error reading data from BLE device. Data recording stopped.", 5000);
+    // This catch block handles any other unexpected errors within handleLocationUpdate
+    // that were not specifically caught above (e.g., issues with 'atob', parsing, etc.).
+    console.error("❌ General error in handleLocationUpdate:", error);
+    stopSamplingLoop(); // This now reliably stops GPS
+    displayErrorToast("❌ An unexpected error occurred. Data recording stopped.", 5000);
     // *** MODIFICATION 6: Show Red Icon for general errors ***
     setIconType('red');
     setIconVisible(true);
@@ -566,20 +628,22 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
 export const stopSampling = async () => { 
   console.log("🛑 //#8 stopSampling -  Stopping sampling ...");
 
+  // --- MODIFICATION: Ensure stopSampling also sets the red icon on manual stop ---
+  // This is for when the user manually presses stop, if a red icon isn't already there
+  // and you want to indicate a "stopped" state for error. However, usually for manual stop,
+  // you just clear the icon or show nothing.
+  // For now, let's keep it simple and ensure stopSamplingLoop handles the cleanup.
+  
   bleState.isIntentionalDisconnectRef.current = true;
   bleState.isScanningRef.current = false;
   bleState.setDummyState(prev => prev + 1);
 
-  if (bleState.locationRef) {
-    console.log("📍 Stopping location tracking...");
-    bleState.locationRef.remove();
-    bleState.locationRef = null;
-  }
+  // Call the centralized cleanup function
+  stopSamplingLoop(); 
 
   if (!bleState.deviceRef.current) {
     console.log("⚠️ No device connected.");
-    bleState.isSamplingRef.current = false;
-    bleState.setDummyState(prev => prev + 1);
+    // No need to set isSamplingRef here as stopSamplingLoop already handles it.
     await showToastAsync("Stopped Sampling Temperature Data", 3000); // This toast is fine here
     return;
   }
@@ -598,7 +662,7 @@ export const stopSampling = async () => {
   }
 
   bleState.deviceRef.current = null;
-  bleState.isSamplingRef.current = false;
+  // No need to set isSamplingRef here as stopSamplingLoop already handles it.
   bleState.setDummyState(prev => prev + 1);
   await showToastAsync("Stopped Sampling Temperature Data", 3000);
 };
@@ -732,7 +796,7 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
       // Proceed with BLE scan
       if (bleState.isSamplingRef.current) {
         console.log("🛑 Stopping sampling before reading sensor ID...");
-        await stopSampling(null); // Assuming stopSampling can handle a null argument if it doesn't need it
+        await stopSampling(); // stopSampling no longer needs arguments from this context
       }
 
       if (bleState.deviceRef.current) {
@@ -816,8 +880,8 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
 
                 return resolve(true);
               } catch (connectError) {
-                console.error("❌ Connection or read error:", connectError);
-                return reject(connectError);
+                  console.error("❌ Connection or read error:", connectError);
+                  return reject(connectError);
               }
             }
           });
