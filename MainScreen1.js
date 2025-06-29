@@ -186,21 +186,10 @@ export default function MainScreen() {
         }}
       />
 
-      {/* --- MOVED ICON DISPLAY BLOCK HERE --- */}
-      {iconVisible && (
-        <View style={styles.iconContainer}>
-          {iconType === 'red' && (
-            <Icon name="error" size={50} color="red" />
-          )}
-          {iconType === 'green' && (
-            <Icon name="check-circle" size={50} color="green" />
-          )}
-        </View>
-      )}
-      {/* --- END MOVED ICON DISPLAY BLOCK --- */}
+     
 
 
-      <View style={{ marginBottom: 40 }}><Text> </Text></View>
+      <View style={{ marginBottom: 20 }}><Text> </Text></View>
       <Button
         title="Clear Data"
         containerStyle={{ width: '35%', marginBottom: 12 }}
@@ -214,6 +203,19 @@ export default function MainScreen() {
           setIconType(null);
         }}
       />
+
+       {/* --- MOVED ICON DISPLAY BLOCK HERE --- */}
+      {iconVisible && (
+        <View style={styles.iconContainer}>
+          {iconType === 'red' && (
+            <Icon name="error" size={50} color="red" />
+          )}
+          {iconType === 'green' && (
+            <Icon name="check-circle" size={50} color="green" />
+          )}
+        </View>
+      )}
+      {/* --- END MOVED ICON DISPLAY BLOCK --- */}
 
       <Image
         source={require("./assets/icon.png")}
