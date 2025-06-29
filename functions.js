@@ -1,10 +1,10 @@
 import { Alert, Platform, PermissionsAndroid } from "react-native";
 import * as Location from "expo-location";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system"; // This import is present but not used in the provided snippet.
 import * as SQLite from "expo-sqlite";
 import { BleManager } from "react-native-ble-plx";
 import { atob } from "react-native-quick-base64";
-import { Buffer } from "buffer";
+import { Buffer } from "buffer"; // This import is present but not used in the provided snippet.
 import * as SecureStore from "expo-secure-store";
 import { SERVICE_UUID, CHARACTERISTIC_UUID} from "./constants";
 import { showToastAsync } from "./functionsHelper";
@@ -16,7 +16,6 @@ bleState.manager = manager;
 const THROTTLE_ERROR_TOAST_INTERVAL_MS = 5000;
 
 //# Throttle error toasts to avoid spamming
-
 export const displayErrorToast = async (message, duration = 3000) => {
   const now = Date.now();
   if (!bleState.lastErrorToastTimestampRef) {
@@ -76,7 +75,7 @@ export async function requestBluetoothPermissions() {
 
 
 //# Define the function to open/get the database connection
-const openDatabaseConnection = async () => {
+export const openDatabaseConnection = async () => { // Exported for use in SettingsScreen
   if (bleState.dbRef.current) {
     console.log("Database already open, returning existing instance.");
     return bleState.dbRef.current;
@@ -109,7 +108,9 @@ const openDatabaseConnection = async () => {
 
 //#1. handleStart: scan, connect and start sampling BLE temperature sensor
      
-export const handleStart = async (deviceName, setCounter, setTemperature, setAccuracy) => {
+export const handleStart = async (deviceName, setCounter, setTemperature, setAccuracy,
+  setIconType,setIconVisible )   => {
+
   console.log(`🚀 handleStart triggered, Campaign & sensor: ${deviceName}`);
 
   const { status } = await Location.requestForegroundPermissionsAsync();
@@ -132,8 +133,6 @@ export const handleStart = async (deviceName, setCounter, setTemperature, setAcc
     console.log("🔗 Opening database connection...")  ;
     await openDatabaseConnection();
   
-
-
     // Stop sampling and disconnect if already connected or sampling
     if (bleState.isConnectedRef.current || bleState.deviceRef.current) {
       try {
@@ -145,14 +144,6 @@ export const handleStart = async (deviceName, setCounter, setTemperature, setAcc
         bleState.deviceRef.current = null;
         // Also ensure location tracking is stopped if `handleStart` is called while sampling
         if (bleState.isSamplingRef.current) {
-            // Assuming stopSamplingLoop is accessible in this scope (e.g., imported or defined nearby)
-            // You might want to explicitly call it here if handleStart can be used to "reset"
-            // If stopSamplingLoop also cleans up dbRef, that's fine.
-            // If not, ensure dbRef is set to null if the disconnection caused it to become invalid
-            // For now, let's assume stopSamplingLoop is called elsewhere for active sampling
-            // or that a simple disconnect is enough if sampling isn't active.
-            // If handleStart is called from a 'start' button and system was already sampling,
-            // then explicitly stop the sampling loop here.
             stopSamplingLoop(); // 
         }
 
@@ -315,8 +306,6 @@ export const ConnectToPairedSensor = async (scanTimeout = 10000) => {
 };
 
 
-
-
 //#2a ✅ Function to handle device disconnection
 const handleDeviceDisconnection = async () => {
   console.log(`🔌 Device disconnected.`);
@@ -350,14 +339,12 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
 
   if (!device || !isConnected) {
     console.warn("⚠️ Sensor device is not connected. Sampling cannot start.");
-    // Changed to displayErrorToast
     displayErrorToast("⚠️ Cannot start sampling. BLE sensor is not connected!", 3000);
     return;
   }
 
   if (!bleState.characteristicsRef.current) {
     console.warn("⚠️ No characteristic available. Cannot start sampling.");
-    // Changed to displayErrorToast
     displayErrorToast("⚠️ Cannot start sampling. No BLE characteristic found!", 3000);
     return;
   }
@@ -373,9 +360,7 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
     const oneTimePos = await Location.getCurrentPositionAsync({});
     console.log("🌍 One-time location check:", oneTimePos);
 
-// Start getting location updates every second
-
-
+    // Start getting location updates every second
     bleState.locationRef = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
@@ -398,12 +383,11 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
           }
 
           // handleLocationUpdate called each time location updates
-          handleLocationUpdate(location, setCounter, setTemperature, setAccuracy);
+          handleLocationUpdate(location, setCounter, setTemperature, setAccuracy, setIconType, setIconVisible);
 
         } catch (err) {
           console.error("❌ Error inside watchPositionAsync callback:", err);
           stopSamplingLoop();
-          // Changed to displayErrorToast
           displayErrorToast("❌ An error occurred during data collection. Sampling stopped.", 5000);
         }
       }
@@ -413,7 +397,6 @@ const startSampling = async (setCounter, setTemperature, setAccuracy) => {
   } catch (error) {
     console.error("❌ Error starting location tracking:", error);
     stopSamplingLoop();
-    // Changed to displayErrorToast
     displayErrorToast("❌ Error starting location tracking. Sampling stopped.", 5000);
   }
 };
@@ -447,36 +430,39 @@ const stopSamplingLoop = () => {
 
 //#4. handleLocationUpdate: Callback function when location updates in #3
 
-const handleLocationUpdate = async (location, setCounter, setTemperature, setAccuracy) => {
-  console.log("📍📍📍📍 //#4 handleLocationUpdate:", location.coords.latitude, location.coords.longitude);
-
-  setCounter((prev) => {
-    const newCounter = prev + 1;
-    console.log(`✅ Updated Counter: ${newCounter}`);
-    return newCounter;
-  });
+// Original function with modifications
+const handleLocationUpdate = async (location, setCounter, setTemperature, setAccuracy, setIconType, setIconVisible) => {
+  console.log("📍📍📍📍 //#4 handleLocationUpdate:");
 
   try {
+    // --- Pre-checks for BLE connection and sampling status ---
     if (!bleState.characteristicsRef.current) {
       console.warn("⚠️ Device disconnected or no characteristic found. Stopping updates...");
       bleState.isIntentionalDisconnectRef.current = false;
       stopSamplingLoop();
-      // Changed to displayErrorToast
       displayErrorToast("⚠️ BLE device disconnected. Data recording stopped.", 5000);
-      return;
+      // *** MODIFICATION 1: Show Red Icon ***
+      setIconType('red');
+      setIconVisible(true);
+      return; // Exit if BLE device is not connected
     }
 
     if (!bleState.isSamplingRef.current) {
       console.warn("⚠️ Sampling stopped. Ignoring BLE read.");
-      return;
+      // Ensure red icon is removed if sampling stopped but device was connected
+      setIconVisible(false); // Hide any existing icon
+      return; // Exit if sampling is not active
     }
 
+    // --- BLE Read Operation ---
     const rawData = await bleState.characteristicsRef.current.read();
     if (!rawData.value) {
       console.error("❌ Error: No value returned in the characteristic.");
-      // Changed to displayErrorToast
       displayErrorToast("❌ No value from BLE device. Check connection.", 3000);
-      return;
+      // *** MODIFICATION 2: Show Red Icon for read error ***
+      setIconType('red');
+      setIconVisible(true);
+      return; // Exit if no data is read from BLE
     }
 
     const decodedValue = atob(rawData.value);
@@ -484,26 +470,24 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
 
     const tempValue = decodedValue;
     const temperature = parseFloat(parseFloat(tempValue).toFixed(2)) || NaN;
-    setTemperature(temperature);
+    setTemperature(temperature); // Update temperature display regardless of database save
 
     const { latitude, longitude, altitude, accuracy, speed } = location.coords;
     const timestamp = Date.now();
 
-    // Ensure bleState.lastWriteTimestampRef is initialized as an object
-    // This is a defensive check; ideally it's initialized in bleState.js
+    // Ensure bleState.lastWriteTimestampRef is initialized
     if (!bleState.lastWriteTimestampRef) {
         bleState.lastWriteTimestampRef = { current: 0 };
     }
 
-    // Access lastWriteTimestampRef.current directly from bleState
+    // Duplicate data check based on timestamp
     if (timestamp - bleState.lastWriteTimestampRef.current < 50) {
       console.warn("⚠️ Duplicate data detected! Skipping write.");
-      return;
+      return; // Exit if data is a duplicate
     }
     bleState.lastWriteTimestampRef.current = timestamp;
 
-
-    const humInt = 0;
+    const humInt = 0; // Humidity is fixed to 0 as per original code
     const tempInt = Math.round(temperature * 1e2);
     const latInt = Math.round(latitude * 1e7);
     const lonInt = Math.round(longitude * 1e7);
@@ -511,17 +495,19 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
     const accInt = Math.round(accuracy * 1e2);
     const speedInt = Math.round(speed * 1e2);
 
-    setAccuracy(Math.round(accuracy));
+    setAccuracy(Math.round(accuracy)); // Update accuracy display regardless of database save
 
+    // --- Database Write Operation ---
     try {
-      // Access the database instance from bleState.dbRef.current
       const database = bleState.dbRef.current;
       if (!database) {
           console.error("❌ Database reference is null. Cannot write data.");
           stopSamplingLoop();
-          // Changed to displayErrorToast
           displayErrorToast("❌ Data recording stopped! Database not available.", 5000);
-          return;
+          // *** MODIFICATION 3: Show Red Icon for DB null ***
+          setIconType('red');
+          setIconVisible(true);
+          return; // Exit if database is not available
       }
 
       await database.runAsync(
@@ -530,10 +516,25 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
         [timestamp, tempInt, humInt, latInt, lonInt, altInt, accInt, speedInt]
       );
       console.log("✅ Data added to database successfully.");
-    } catch (error) {
-      console.error("❌ Fatal Error inserting data into database:", error);
+
+      // *** MODIFICATION 4: Remove Red, Show Green for 500ms ***
+      setIconType('green');
+      setIconVisible(true);
+      setTimeout(() => {
+        setIconVisible(false); // Hide green icon after 500ms
+      }, 500);
+
+      // --- ONLY Increment Counter IF Data is Successfully Saved to Database ---
+      setCounter((prev) => {
+        const newCounter = prev + 1;
+        console.log(`✅ Updated Counter: ${newCounter}`);
+        return newCounter;
+      });
+      // --- End Counter Increment Block ---
+
+    } catch (dbError) {
+      console.error("❌ Fatal Error inserting data into database:", dbError);
       stopSamplingLoop();
-      // Changed to displayErrorToast, with a longer duration for critical error
       displayErrorToast(
         "❌ ERROR: Data recording stopped! Database issue. Please restart the app.",
         15000
@@ -541,18 +542,27 @@ const handleLocationUpdate = async (location, setCounter, setTemperature, setAcc
       // Invalidate the database reference on critical database error
       console.log("🗑️ Invalidating database reference due to error.");
       bleState.dbRef.current = null;
-      return;
+      // *** MODIFICATION 5: Show Red Icon for DB write error ***
+      setIconType('red');
+      setIconVisible(true);
+      return; // Exit on database write error
     }
 
   } catch (error) {
+    // This catch block handles errors from BLE characteristic reading or any other
+    // unexpected errors within the handleLocationUpdate function, before the database write attempt.
     console.error("❌ Error reading characteristic or general handleLocationUpdate error:", error);
     stopSamplingLoop();
-    
     displayErrorToast("❌ Error reading data from BLE device. Data recording stopped.", 5000);
+    // *** MODIFICATION 6: Show Red Icon for general errors ***
+    setIconType('red');
+    setIconVisible(true);
   }
 };
 
+
 //#8. Stop Sampling
+
 export const stopSampling = async () => { 
   console.log("🛑 //#8 stopSampling -  Stopping sampling ...");
 
@@ -587,22 +597,11 @@ export const stopSampling = async () => {
     // displayErrorToast("❌ Failed to disconnect BLE device.", 3000);
   }
 
-  // --- NEW DATABASE MANAGEMENT LOGIC ---
-  // When sampling stops, it's a good practice to ensure the database connection is still valid
-  // if you plan to do immediate operations like clearing data or submitting.
-  // However, `stopSampling` itself doesn't inherently need the DB open unless it's doing DB work.
-  // The line `if (!db)` was removed as 'db' is no longer passed as an argument.
-  // If `stopSampling` is called after a DB error, `bleState.dbRef.current` might already be null.
-  // We don't want to re-open the DB just to stop sampling, only when we *need* to use it.
-  // So, no explicit DB open here. Operations requiring DB will call `openDatabaseConnection` themselves.
-  // --- END NEW DATABASE MANAGEMENT LOGIC ---
-
   bleState.deviceRef.current = null;
   bleState.isSamplingRef.current = false;
   bleState.setDummyState(prev => prev + 1);
   await showToastAsync("Stopped Sampling Temperature Data", 3000);
 };
-
 
 //#9 confirmAndClearDatabase
 
@@ -637,7 +636,7 @@ export const confirmAndClearDatabase = (setDummyState, setCounter) => {
 export const clearDatabase = async (setDummyState, setCounter) => {
   // Removed 'db' argument
   try {
-    console.log("🚨 Clearing database...");
+    console.log("🚨 Entering function 10: Clearing database...");
     setCounter(0);
 
     // --- NEW DATABASE MANAGEMENT LOGIC ---
@@ -647,7 +646,7 @@ export const clearDatabase = async (setDummyState, setCounter) => {
     if (!database) {
       console.warn("⚠️ Database not open/available. Cannot clear data.");
       // Use displayErrorToast as this is a critical error for the user's intent
-      displayErrorToast("⚠️ Cannot clear data. Database not available. Restart app.", 5000);
+      displayErrorToast("⚠️ Cannot clear data. Database not available. ", 5000);
       return; // Exit if database is not available
     }
 
@@ -667,7 +666,6 @@ export const clearDatabase = async (setDummyState, setCounter) => {
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //#11. GetPairedSensorID, save unique device ID (ie, the paired sensor ID) 
 // in SecureStore.  Exit funtion in disconnected state   
-
 
 
 export const GetPairedSensorName = async (scanTimeout = 10000) => {
@@ -734,7 +732,7 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
       // Proceed with BLE scan
       if (bleState.isSamplingRef.current) {
         console.log("🛑 Stopping sampling before reading sensor ID...");
-        await stopSampling(null);
+        await stopSampling(null); // Assuming stopSampling can handle a null argument if it doesn't need it
       }
 
       if (bleState.deviceRef.current) {
@@ -841,5 +839,3 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
     }
   });
 };
-
-

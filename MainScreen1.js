@@ -12,24 +12,27 @@ import { useNavigation } from "@react-navigation/native";
 import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import { Button } from 'react-native-elements';
+import Icon from 'react-native-vector-icons/MaterialIcons'; // <--- NEW: Import Icon component
 
 
-import { bleState } from "./utils/bleState"; // Your bleState object
-// Ensure all these functions are correctly imported (they should be, as per your functions.js)
-import { handleStart, stopSampling, confirmAndClearDatabase} from "./functions";
-import { uploadDatabaseToS3 } from "./functionsS3"; // Assuming this function is in functionsS3.js
-import { showToastAsync } from "./functionsHelper"; // Your toast utility
+import { bleState } from "./utils/bleState";
+import { handleStart, stopSampling, confirmAndClearDatabase } from "./functions";
+import { uploadDatabaseToS3 } from "./functionsS3";
+import { showToastAsync } from "./functionsHelper";
 import { VERSION } from "./constants";
 
-// import { requestBluetoothPermissions } from './utils/blePermissions';
-
 export default function MainScreen() {
-  
+
   const [deviceName, setDeviceName] = useState(null);
   const [counter, setCounter] = useState(0);
   const [temperature, setTemperature] = useState(NaN);
   const [accuracy, setAccuracy] = useState(NaN);
   const [dummyState, setDummyState] = useState(0); // Keep this for UI updates via bleState
+
+  // --- NEW STATE FOR ICONS ---
+  const [iconType, setIconType] = useState(null); // 'red', 'green', or null
+  const [iconVisible, setIconVisible] = useState(false);
+  // --- END NEW STATE ---
 
   const navigation = useNavigation();
 
@@ -52,7 +55,7 @@ export default function MainScreen() {
         console.log("📦 Focused: retrieved settings:", {
           campaignName,
           campaignSensorNumber,
-          pairedSensorName  
+          pairedSensorName
         });
 
         if (
@@ -90,7 +93,7 @@ export default function MainScreen() {
     return unsubscribe;
   }, [navigation]);
 
-  
+
 
   useEffect(() => {
     console.log("MainScreen L4: Setting dummyState for bleState");
@@ -101,21 +104,6 @@ export default function MainScreen() {
     if (!bleState.dbRef) bleState.dbRef = { current: null };
 
   }, []);
-
-
-// Request Bluetooth permissions when the component mounts
-//useEffect(() => {
-//  const getPermissions = async () => {
-//    const granted = await requestBluetoothPermissions();
-//    if (!granted) {
-//console.warn("⚠️ BLE permissions were denied. BLE scanning will not work.");
-//     showToastAsync("⚠️ BLE permissions denied. Please allow in Settings.", 4000);
-//   } else {
-//      console.log("✅ BLE permissions granted.");
-//    }
-//  };
-// getPermissions();
-//}, []);
 
 
   useKeepAwake();
@@ -135,6 +123,19 @@ export default function MainScreen() {
 
       <Text style={styles.temperature}>Counter: {counter}</Text>
 
+      {/* --- NEW ICON DISPLAY BLOCK --- */}
+      {iconVisible && (
+        <View style={styles.iconContainer}>
+          {iconType === 'red' && (
+            <Icon name="error" size={50} color="red" />
+          )}
+          {iconType === 'green' && (
+            <Icon name="check-circle" size={50} color="green" />
+          )}
+        </View>
+      )}
+      {/* --- END NEW ICON DISPLAY BLOCK --- */}
+
       <Button
         title="Start"
         containerStyle={{ width: '35%', marginBottom: 12 }}
@@ -146,8 +147,16 @@ export default function MainScreen() {
             return;
           }
           console.log("--> Start button pressed!", bleState.isScanningRef.current, bleState.isSamplingRef.current);
-      
-          handleStart(deviceNameRef.current, setCounter, setTemperature, setAccuracy);
+
+          // --- PASS NEW SETTERS TO handleStart ---
+          handleStart(
+            deviceNameRef.current,
+            setCounter,
+            setTemperature,
+            setAccuracy,
+            setIconType,      // Pass setIconType
+            setIconVisible    // Pass setIconVisible
+          );
         }}
       />
 
@@ -163,8 +172,14 @@ export default function MainScreen() {
             showToastAsync("⚠️ Nothing to stop: Not connected or sampling.", 2000); // User feedback
             return;
           }
-        
+
           stopSampling();
+          // *** IMPORTANT: When stopping, you might want to clear any existing icon
+          setIconVisible(false);
+          setIconType(null);
+          // If you want the red icon to persist until the next "good" connection,
+          // then you wouldn't clear it here, but it would be cleared by a successful write.
+          // For now, clearing it on stop is a reasonable default.
         }}
       />
 
@@ -178,7 +193,7 @@ export default function MainScreen() {
             showToastAsync("❌ Missing metadata. Cannot upload.", 3000);
             return;
           }
-        
+
           const currentDbFilePath = `${FileSystem.documentDirectory}SQLite/appData.db`;
           uploadDatabaseToS3(currentDbFilePath, jobcodeRef, deviceNameRef);
         }}
@@ -191,8 +206,11 @@ export default function MainScreen() {
         buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
-          
+
           confirmAndClearDatabase(setDummyState, setCounter);
+          // When data is cleared, you might also want to clear any status icons
+          setIconVisible(false);
+          setIconType(null);
         }}
       />
 
@@ -264,4 +282,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "blue"
   },
+  // --- NEW STYLE FOR ICON CONTAINER ---
+  iconContainer: {
+    marginTop: 20, // Adjust as needed for spacing
+    marginBottom: 20, // Adjust as needed
+  }
+  // --- END NEW STYLE ---
 });

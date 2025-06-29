@@ -1,45 +1,14 @@
 import { getPresignedS3Url } from './s3_util'; 
 import * as FileSystem from 'expo-file-system';
-import * as SQLite from 'expo-sqlite'; // Needed here for openDatabaseAsync if fallback
+import * as SQLite from 'expo-sqlite'; // Needed for the type, but openDatabaseConnection should handle actual DB operations
 import { Alert, Platform } from 'react-native';
 import { showToastAsync } from './functionsHelper'; // For success toasts
-import {displayErrorToast} from './functions';
+// Assuming these are exported from functions.js
+import { displayErrorToast, openDatabaseConnection } from './functions'; // Import openDatabaseConnection
 import { bleState } from "./utils/bleState";
 
-// Helper function to get/open DB connection (re-imported for clarity, define where appropriate)
-// This is crucial for consistent DB management.
-const openDatabaseConnection = async () => {
-  if (bleState.dbRef.current) {
-    console.log("Database already open, returning existing instance.");
-    return bleState.dbRef.current;
-  }
-  try {
-    const database = await SQLite.openDatabaseAsync('appData.db');
-    // Ensure tables are created if this is the first open, or after a full clear/restart
-    await database.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS appData (
-        timestamp INTEGER PRIMARY KEY NOT NULL,
-        temperature INTEGER NOT NULL,
-        humidity INTEGER,
-        latitude INTEGER NOT NULL,
-        longitude INTEGER NOT NULL,
-        altitude INTEGER,
-        accuracy INTEGER,
-        speed INTEGER
-      );
-    `);
-    console.log("✅ Database opened and tables ensured.");
-    bleState.dbRef.current = database;
-    return database;
-  } catch (error) {
-    console.error("❌ Error opening database:", error);
-    
-    await displayErrorToast("❌ Critical error: Could not open database! Restart app.", 10000);
-    
-    throw error;
-  }
-};
+// The local declaration of openDatabaseConnection has been removed.
+// It is now expected to be imported from './functions'.
 
 
 export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) => {
@@ -52,25 +21,22 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
       return;
     }
 
- 
-
     const fileExists = await FileSystem.getInfoAsync(dbFilePath);
     if (!fileExists.exists) {
       console.warn("⚠️ Database file does not exist. Cannot upload.");
-    
-     await displayErrorToast("⚠️ Database file not found. No data to upload.", 5000);
+      await displayErrorToast("⚠️ Database file not found. No data to upload.", 5000);
       return;
     }
 
     // --- CRITICAL CHANGE START: DATABASE CONNECTION ---
-    // Instead of opening a new DB connection, use or ensure the bleState managed one.
+    // Ensure the bleState managed database connection is open and retrieve the instance.
     let db;
     try {
-        db = await openDatabaseConnection(); // Ensure DB is open and get the instance
+        // Use the imported openDatabaseConnection from './functions'
+        db = await openDatabaseConnection(); 
     } catch (dbError) {
         console.error("❌ Failed to get database connection for upload:", dbError);
         await showToastAsync("Error", "Failed to access database for upload. Try restarting the app.");
-        // If DB cannot be opened for upload, it's a critical error
         bleState.dbRef.current = null; // Invalidate the ref if there was an issue
         return;
     }
@@ -83,8 +49,7 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
     }
     // --- CRITICAL CHANGE END ---
 
-
-    const checkColumnExists = async (database, columnName) => { // Added database arg
+    const checkColumnExists = async (database, columnName) => {
       const result = await database.getAllAsync(`PRAGMA table_info(appData);`);
       return result.some(row => row.name === columnName);
     };
@@ -96,7 +61,7 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
     }
     await db.runAsync(`UPDATE appData SET jobcode = ?`, [jobcodeRef.current]);
 
-    if (!(await checkColumnExists(db, "rownumber"))) { // Pass the actual db instance
+    if (!(await checkColumnExists(db, "rownumber"))) {
       await db.execAsync(`ALTER TABLE appData ADD COLUMN rownumber INTEGER;`);
       console.log("✅ Added 'rownumber' column.");
     }
@@ -113,7 +78,6 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
 
     const jobcode = jobcodeRef.current;
     console.log("The jobcode written into each row of the db is:", jobcode);
-
 
     const csvHeader = "rownumber,jobcode,Timestamp,Local Date,Local Time,Temperature (°C),Humidity (%),Latitude,Longitude,Altitude (m),Accuracy (m),Speed (MPH)\n";
     const csvBody = appData
@@ -142,7 +106,6 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
         });
 
         // Convert temperature, humidity, latitude, longitude, altitude, accuracy, and speed to safe formats
-        // (timestamp itself can be null, hence ?? "")
         const safeTemp = ((temperature ?? 0) * 1e-2).toFixed(2);
         const safeHumidity = (humidity ?? 0).toFixed(1);
         const safeLat = ((latitude ?? 0) * 1e-7).toFixed(6);
@@ -158,7 +121,6 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
     const csvContent = csvHeader + csvBody;
     const shareablePath = FileSystem.cacheDirectory + `${jobcode}.csv`;
     await FileSystem.writeAsStringAsync(shareablePath, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-
 
     const fileContent = await FileSystem.readAsStringAsync(shareablePath, {
       encoding: FileSystem.EncodingType.UTF8,
@@ -190,20 +152,26 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
     console.log("✅ Upload of .csv data to AWS successful:", uploadFilename);
     console.log("🌐 Public URL:", publicUrl);
 
-    await showToastAsync("File uploaded to cloud storage", 2000);
-    await FileSystem.deleteAsync(shareablePath, { idempotent: true });
+    // --- Confirmation log before toast ---
+    console.log("Attempting to show success toast for S3 upload.");
+    await showToastAsync("File uploaded to cloud storage", 5000);
+    // --- End confirmation log ---
 
-    // --- CRITICAL CHANGE: DO NOT CLOSE DB HERE ---
-    // Remove: await db.closeAsync();
+    try {
+      await FileSystem.deleteAsync(shareablePath, { idempotent: true });
+      console.log("✅ Local CSV file deleted successfully.");
+    } catch (deleteError) {
+      console.error("❌ Error deleting local CSV file:", deleteError);
+      // It's okay to continue here, as the upload was successful
+    }
+
     // The database connection (bleState.dbRef.current) should be managed at a higher level
     // (e.g., app lifecycle or explicit disconnects in stopSampling).
-    // Closing it here could cause "Access to closed resource" errors if other parts of the app
-    // expect it to remain open (e.g., if you upload mid-sampling session, or before a full app shutdown).
-    // The `openDatabaseConnection` will handle reopening if it's null later.
-    // --- END CRITICAL CHANGE ---
+    // Do NOT close the database here.
+    // Removed: await db.closeAsync();
 
   } catch (error) {
     console.error("❌ Error uploading .csv file to S3:", error);
-     await displayErrorToast("❌ Failed to upload data: " + error.message, 8000);    
+    await displayErrorToast("❌ Failed to upload data: " + error.message, 8000);    
   }
 }
