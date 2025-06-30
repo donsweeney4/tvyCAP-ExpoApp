@@ -190,12 +190,16 @@ export default function MainScreen1() {
       <Text style={styles.questname}>Quest Science Center{"\n"}Livermore, CA</Text>
 
       {/* Moved icon display to end to avoid toast overlap */}
+
+    {/* 
       {iconVisible && (
         <View style={styles.iconContainer}>
           {iconType === 'red' && <Icon name="error" size={50} color="red" />}
           {iconType === 'green' && <Icon name="check-circle" size={50} color="green" />}
         </View>
       )}
+      */}
+      
     </View>
   );
 }
