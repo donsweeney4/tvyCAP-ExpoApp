@@ -8,13 +8,11 @@ import {
   Image,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-
 import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import { Button } from 'react-native-elements';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import Toast from 'react-native-root-toast'; // <--- NEW: Import Icon component
-
+import Toast from 'react-native-root-toast';
 
 import { bleState } from "./utils/bleState";
 import { handleStart, stopSampling, confirmAndClearDatabase } from "./functions";
@@ -22,29 +20,16 @@ import { uploadDatabaseToS3 } from "./functionsS3";
 import { showToastAsync } from "./functionsHelper";
 import { VERSION } from "./constants";
 
-
-
-
-
-
-
 export default function MainScreen1() {
-  
-  
-
   const [deviceName, setDeviceName] = useState(null);
   const [counter, setCounter] = useState(0);
   const [temperature, setTemperature] = useState(NaN);
   const [accuracy, setAccuracy] = useState(NaN);
-  const [dummyState, setDummyState] = useState(0); // Keep this for UI updates via bleState
-
-  // --- NEW STATE FOR ICONS ---
-  const [iconType, setIconType] = useState(null); // 'red', 'green', or null
+  const [dummyState, setDummyState] = useState(0);
+  const [iconType, setIconType] = useState(null);
   const [iconVisible, setIconVisible] = useState(false);
-  // --- END NEW STATE ---
 
   const navigation = useNavigation();
-
   const deviceNameRef = useRef(null);
   const jobcodeRef = useRef(null);
   const redirectedRef = useRef(false);
@@ -68,9 +53,9 @@ export default function MainScreen1() {
         });
 
         if (
-           campaignName?.trim() &&
-           campaignSensorNumber?.trim() &&
-           pairedSensorName?.trim()
+          campaignName?.trim() &&
+          campaignSensorNumber?.trim() &&
+          pairedSensorName?.trim()
         ) {
           const paddedSensorNumber = campaignSensorNumber.padStart(3, "0");
           const fullDeviceName = `${campaignName}_${paddedSensorNumber}`;
@@ -102,46 +87,15 @@ export default function MainScreen1() {
     return unsubscribe;
   }, [navigation]);
 
-
-
-useEffect(() => {
-  console.log("📢 About to show toast...");
-    setTimeout(() => {
-    Toast.show('This is a test toast', {
-      duration: Toast.durations.LONG,
-      position: Toast.positions.TOP,
-      containerStyle: {
-        backgroundColor: 'black',
-        zIndex: 9999,
-        elevation: 9999,
-      },
-      textStyle: {
-        color: 'white',
-        fontSize: 16,
-      },
-    });
-   }, 100);
-  }, []);
-
-
-
-
-
-
-
-
-
+ 
 
   useEffect(() => {
     console.log("MainScreen L4: Setting dummyState for bleState");
-    bleState.setDummyState = setDummyState; // Correctly sets the setter
-    // Also, initialize refs in bleState if they aren't already for safety (though bleState.js should do this)
+    bleState.setDummyState = setDummyState;
     if (!bleState.lastWriteTimestampRef) bleState.lastWriteTimestampRef = { current: 0 };
     if (!bleState.lastErrorToastTimestampRef) bleState.lastErrorToastTimestampRef = { current: 0 };
     if (!bleState.dbRef) bleState.dbRef = { current: null };
-
   }, []);
-
 
   useKeepAwake();
 
@@ -170,16 +124,13 @@ useEffect(() => {
             showToastAsync("❌ Device name missing. Check settings.", 3000);
             return;
           }
-          console.log("--> Start button pressed!", bleState.isScanningRef.current, bleState.isSamplingRef.current);
-
-          // --- PASS NEW SETTERS TO handleStart ---
           handleStart(
             deviceNameRef.current,
             setCounter,
             setTemperature,
             setAccuracy,
-            setIconType,      // Pass setIconType
-            setIconVisible    // Pass setIconVisible
+            setIconType,
+            setIconVisible
           );
         }}
       />
@@ -190,20 +141,13 @@ useEffect(() => {
         buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
-          console.log("Stop button pressed! Calling stopSampling //#8");
-          if (!bleState.deviceRef.current && !bleState.isSamplingRef.current) { // Check if there's nothing to stop
-            console.warn("⚠️ Nothing to stop: No device connected or not sampling.");
-            showToastAsync("⚠️ Nothing to stop: Not connected or sampling.", 2000); // User feedback
+          if (!bleState.deviceRef.current && !bleState.isSamplingRef.current) {
+            showToastAsync("⚠️ Nothing to stop: Not connected or sampling.", 2000);
             return;
           }
-
           stopSampling();
-          // *** IMPORTANT: When stopping, you might want to clear any existing icon
           setIconVisible(false);
           setIconType(null);
-          // If you want the red icon to persist until the next "good" connection,
-          // then you wouldn't clear it here, but it would be cleared by a successful write.
-          // For now, clearing it on stop is a reasonable default.
         }}
       />
 
@@ -217,42 +161,26 @@ useEffect(() => {
             showToastAsync("❌ Missing metadata. Cannot upload.", 3000);
             return;
           }
-
           const currentDbFilePath = `${FileSystem.documentDirectory}SQLite/appData.db`;
           uploadDatabaseToS3(currentDbFilePath, jobcodeRef, deviceNameRef);
         }}
       />
 
-     
-
-
       <View style={{ marginBottom: 20 }}><Text> </Text></View>
+
       <Button
         title="Clear Data"
         containerStyle={{ width: '35%', marginBottom: 12 }}
         buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
-
           confirmAndClearDatabase(setDummyState, setCounter);
-          // When data is cleared, you might also want to clear any status icons
           setIconVisible(false);
           setIconType(null);
         }}
       />
 
-     
-      {iconVisible && (
-        <View style={styles.iconContainer}>
-          {iconType === 'red' && (
-            <Icon name="error" size={50} color="red" />
-          )}
-          {iconType === 'green' && (
-            <Icon name="check-circle" size={50} color="green" />
-          )}
-        </View>
-      )}
-   
+      
 
       <Image
         source={require("./assets/icon.png")}
@@ -260,6 +188,14 @@ useEffect(() => {
         resizeMode="contain"
       />
       <Text style={styles.questname}>Quest Science Center{"\n"}Livermore, CA</Text>
+
+      {/* Moved icon display to end to avoid toast overlap */}
+      {iconVisible && (
+        <View style={styles.iconContainer}>
+          {iconType === 'red' && <Icon name="error" size={50} color="red" />}
+          {iconType === 'green' && <Icon name="check-circle" size={50} color="green" />}
+        </View>
+      )}
     </View>
   );
 }
@@ -322,10 +258,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "blue"
   },
-  // --- NEW STYLE FOR ICON CONTAINER ---
   iconContainer: {
-    marginTop: 20, // Adjust as needed for spacing
-    marginBottom: 20, // Adjust as needed
+    marginTop: 20,
+    marginBottom: 20,
   }
-  // --- END NEW STYLE ---
 });
