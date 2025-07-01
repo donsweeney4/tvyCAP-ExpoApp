@@ -191,15 +191,28 @@ export default function MainScreen1() {
 
       {/* Moved icon display to end to avoid toast overlap */}
 
-    {/* 
-      {iconVisible && (
-        <View style={styles.iconContainer}>
-          {iconType === 'red' && <Icon name="error" size={50} color="red" />}
-          {iconType === 'green' && <Icon name="check-circle" size={50} color="green" />}
-        </View>
-      )}
-      */}
+    
+    {iconVisible && (
+  <View style={styles.iconContainer}>
+    {iconType === 'red' && (
+      <>
+        
+        <Text style={styles.errorText}>Temperature sensor not connected!</Text>
+         <Text style={styles.errorText}>Push start to try to reconnect & resume!</Text>
+        <Icon name="error" size={50} color="red" />
+      </>
+    )}
+    {iconType === 'green' && (
+      <>
+      <Text style={styles.errorText}>Data sample saved!</Text>
+      <Icon name="check-circle" size={50} color="green" />
+      </>
+    )}
+  </View>
+)}
+
       
+
     </View>
   );
 }
@@ -263,7 +276,11 @@ const styles = StyleSheet.create({
     color: "blue"
   },
   iconContainer: {
+    position: "absolute",
+    bottom: 0,
     marginTop: 20,
+    alignSelf: "center",
     marginBottom: 20,
+    alignItems: "center",
   }
 });
