@@ -1,60 +1,98 @@
-import { getPresignedS3Url } from './s3_util'; 
+import { getPresignedS3Url } from './s3_util';
 import * as FileSystem from 'expo-file-system';
-import * as SQLite from 'expo-sqlite'; // Needed for the type, but openDatabaseConnection should handle actual DB operations
+import * as SQLite from 'expo-sqlite';
 import { Alert, Platform } from 'react-native';
-import { showToastAsync } from './functionsHelper'; // For success toasts
-// Assuming these are exported from functions.js
-import { displayErrorToast, openDatabaseConnection } from './functions'; // Import openDatabaseConnection
+import { showToastAsync } from './functionsHelper';
+import { displayErrorToast, openDatabaseConnection } from './functions';
 import { bleState } from "./utils/bleState";
 
-// The local declaration of openDatabaseConnection has been removed.
-// It is now expected to be imported from './functions'.
+// --- Helper: Function to manage icon display (copied for self-containment) ---
+const updateIconDisplay = (
+  type, // 'green', 'red', or null
+  text,
+  duration, // how long the icon should be visible
+  setIconType,
+  setIconVisible,
+  setIconText,
+  iconHideTimerRef
+) => {
+  if (iconHideTimerRef.current) {
+    clearTimeout(iconHideTimerRef.current);
+    iconHideTimerRef.current = null;
+  }
+
+  if (type === null) {
+    setIconVisible(false);
+    setIconType(null);
+    setIconText("");
+  } else {
+    setIconType(type);
+    setIconText(text);
+    setIconVisible(true);
+    iconHideTimerRef.current = setTimeout(() => { // Corrected ref name: iconHideTimerTimerRef -> iconHideTimerRef
+      setIconVisible(false);
+      setIconType(null);
+      setIconText("");
+    }, duration);
+  }
+};
 
 
-export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) => {
+export const uploadDatabaseToS3 = async (
+  dbFilePath,
+  jobcodeRef,
+  deviceNameRef,
+  setIconType,
+  setIconVisible,
+  setIconText,
+  iconHideTimerRef
+) => {
+  // Clear any existing icon when starting a new upload operation
+  updateIconDisplay(null, "", 0, setIconType, setIconVisible, setIconText, iconHideTimerRef);
+
   try {
     console.log(`Uploading .csv file to AWS. Current data Sampling is ${bleState.isSamplingRef.current}`);
 
     if (bleState.isSamplingRef.current) {
-      // Use showToastAsync as this is a specific, non-critical user-action required message
+      // Keep this toast as it's a direct instruction for the user
       await showToastAsync("Sampling in Progress. Stop sampling before uploading.", 2000);
+      updateIconDisplay('red', "Stop sampling before upload!", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
 
     const fileExists = await FileSystem.getInfoAsync(dbFilePath);
     if (!fileExists.exists) {
       console.warn("⚠️ Database file does not exist. Cannot upload.");
-      await displayErrorToast("⚠️ Database file not found. No data to upload.", 5000);
+      // REMOVED: displayErrorToast("⚠️ Database file not found. No data to upload.", 5000);
+      updateIconDisplay('red', "No data file to upload!", 4000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
 
-    // --- CRITICAL CHANGE START: DATABASE CONNECTION ---
-    // Ensure the bleState managed database connection is open and retrieve the instance.
     let db;
     try {
-        // Use the imported openDatabaseConnection from './functions'
-        db = await openDatabaseConnection(); 
+        db = await openDatabaseConnection();
     } catch (dbError) {
         console.error("❌ Failed to get database connection for upload:", dbError);
+        // Keep this toast as it's a critical error related to DB access
         await showToastAsync("Error", "Failed to access database for upload. Try restarting the app.");
-        bleState.dbRef.current = null; // Invalidate the ref if there was an issue
+        bleState.dbRef.current = null;
+        updateIconDisplay('red', "Database error! Cannot upload.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         return;
     }
 
-    // Ensure db is valid after attempting to open/get it
     if (!db) {
         console.error("❌ Database connection is unexpectedly null after open attempt.");
+        // Keep this toast as it's a critical error related to DB access
         await showToastAsync("Error", "Database connection is unavailable. Cannot upload.");
+        updateIconDisplay('red', "Database unavailable! Cannot upload.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         return;
     }
-    // --- CRITICAL CHANGE END ---
 
     const checkColumnExists = async (database, columnName) => {
       const result = await database.getAllAsync(`PRAGMA table_info(appData);`);
       return result.some(row => row.name === columnName);
     };
 
-    // Pass the actual db instance to checkColumnExists
     if (!(await checkColumnExists(db, "jobcode"))) {
       await db.execAsync(`ALTER TABLE appData ADD COLUMN jobcode TEXT;`);
       console.log("✅ Added 'jobcode' column.");
@@ -72,7 +110,8 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
 
     const appData = await db.getAllAsync("SELECT * FROM appData;");
     if (appData.length === 0) {
-      await showToastAsync("No Data", "There is no data in the database to upload.");
+      // REMOVED: await showToastAsync("No Data", "There is no data in the database to upload.");
+      updateIconDisplay('red', "No data to upload!", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
 
@@ -96,7 +135,6 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
         } = row;
 
         const dateObj = new Date(timestamp ?? 0);
-        // Ensure toLocaleDateString and toLocaleTimeString handle potentially invalid dates
         const localDate = isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleDateString();
         const localTime = isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleTimeString([], {
           hourCycle: 'h23',
@@ -105,14 +143,13 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
           second: '2-digit'
         });
 
-        // Convert temperature, humidity, latitude, longitude, altitude, accuracy, and speed to safe formats
         const safeTemp = ((temperature ?? 0) * 1e-2).toFixed(2);
         const safeHumidity = (humidity ?? 0).toFixed(1);
         const safeLat = ((latitude ?? 0) * 1e-7).toFixed(6);
         const safeLon = ((longitude ?? 0) * 1e-7).toFixed(6);
         const safeAlt = ((altitude ?? 0) * 1e-2).toFixed(2);
         const safeAcc = ((accuracy ?? 0) * 1e-2).toFixed(2);
-        const safeSpeed = (((speed ?? 0) * 1e-2) * 2.23694).toFixed(2); // Convert m/s * 100 to MPH
+        const safeSpeed = (((speed ?? 0) * 1e-2) * 2.23694).toFixed(2);
 
         return `${rownumber ?? ""},${jobcode ?? ""},${timestamp ?? ""},${localDate},${localTime},${safeTemp},${safeHumidity},${safeLat},${safeLon},${safeAlt},${safeAcc},${safeSpeed}`;
       })
@@ -129,7 +166,8 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
     const filename = deviceNameRef.current;
     if (!filename) {
         console.error("❌ Device name not available for upload filename.");
-        await showToastAsync("Error", "Device name missing. Cannot upload.");
+        // REMOVED: await showToastAsync("Error", "Device name missing. Cannot upload.");
+        updateIconDisplay('red', "Device name missing! Cannot upload.", 4000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         return;
     }
     const uploadFilename = `${filename}.csv`;
@@ -152,26 +190,23 @@ export const uploadDatabaseToS3 = async (dbFilePath, jobcodeRef, deviceNameRef) 
     console.log("✅ Upload of .csv data to AWS successful:", uploadFilename);
     console.log("🌐 Public URL:", publicUrl);
 
-    // --- Confirmation log before toast ---
-    console.log("Attempting to show success toast for S3 upload.");
-    await showToastAsync("File uploaded to cloud storage", 5000);
-    // --- End confirmation log ---
+    // REMOVED: await showToastAsync("File uploaded to cloud storage", 5000);
+    // --- SUCCESS ICON ---
+    updateIconDisplay('green', "Data upload successful!", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
+
 
     try {
       await FileSystem.deleteAsync(shareablePath, { idempotent: true });
       console.log("✅ Local CSV file deleted successfully.");
     } catch (deleteError) {
       console.error("❌ Error deleting local CSV file:", deleteError);
-      // It's okay to continue here, as the upload was successful
     }
-
-    // The database connection (bleState.dbRef.current) should be managed at a higher level
-    // (e.g., app lifecycle or explicit disconnects in stopSampling).
-    // Do NOT close the database here.
-    // Removed: await db.closeAsync();
 
   } catch (error) {
     console.error("❌ Error uploading .csv file to S3:", error);
-    await displayErrorToast("❌ Failed to upload data: " + error.message, 8000);    
+    // Keep this toast as it's a critical error that provides detail
+    await displayErrorToast("❌ Failed to upload data: " + error.message, 8000);
+    // --- FAILURE ICON ---
+    updateIconDisplay('red', "Failed to upload data!", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
   }
-}
+};

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import {
 
 import * as SecureStore from "expo-secure-store";
 import { useNavigation } from "@react-navigation/native";
-// Assuming these functions are correctly implemented and accessible from these paths
+
+import Icon from 'react-native-vector-icons/MaterialIcons';
+
 import { GetPairedSensorName, openDatabaseConnection, clearDatabase } from "./functions";
 import { showToastAsync } from "./functionsHelper";
 
@@ -23,8 +25,13 @@ export default function SettingsScreen() {
   const [campaignName, setCampaignName] = useState("");
   const [campaignSensorNumber, setCampaignSensorNumber] = useState("");
   const [sensorPaired, setSensorPaired] = useState(false);
-  const [dummyState, setDummyState] = useState(0); // Used for force update in clearDatabase, as per original code
-  const [counter, setCounter] = useState(0); // Used for force update in clearDatabase, as per original code
+  const [dummyState, setDummyState] = useState(0);
+  const [counter, setCounter] = useState(0);
+
+  const [iconType, setIconType] = useState(null);
+  const [iconVisible, setIconVisible] = useState(false);
+  const [iconText, setIconText] = useState("");
+  const iconHideTimerRef = useRef(null);
 
   const navigation = useNavigation();
 
@@ -34,27 +41,21 @@ export default function SettingsScreen() {
    */
   const loadSettings = async () => {
     try {
-      // Check if SecureStore is available on the device
       if (!(await SecureStore.isAvailableAsync())) {
         console.error("SecureStore is not available on this device.");
         return;
       }
-
-      // Retrieve items from SecureStore
       const storedCampaignName = await SecureStore.getItemAsync("campaignName");
       const storedCampaignSensorNumber = await SecureStore.getItemAsync("campaignSensorNumber");
 
-      // Update state if values are found
       if (storedCampaignName) setCampaignName(storedCampaignName);
       if (storedCampaignSensorNumber) setCampaignSensorNumber(storedCampaignSensorNumber);
     } catch (error) {
       console.error("Error loading settings from SecureStore:", error);
-      // Optionally, show a toast to the user about loading failure
       showToastAsync("Error loading saved settings.", 2000);
     }
   };
 
-  // Effect hook to load settings when the component mounts
   useEffect(() => {
     loadSettings();
   }, []);
@@ -79,7 +80,7 @@ export default function SettingsScreen() {
       } catch (error) {
         console.warn(`⏳ Retry ${attempt} failed for ${key}. Error: ${error.message}`);
       }
-      await new Promise((res) => setTimeout(res, 300)); // Short delay before retrying
+      await new Promise((res) => setTimeout(res, 300));
     }
     console.error(`❌ Failed to save ${key} after ${retries} attempts.`);
     return false;
@@ -91,9 +92,8 @@ export default function SettingsScreen() {
    */
   const saveSettings = async () => {
     try {
-      Keyboard.dismiss(); // Dismiss the keyboard when save is initiated
+      Keyboard.dismiss();
 
-      // Input validation
       if (!campaignName || !campaignSensorNumber) {
         showToastAsync("Missing Info \n Enter both campaign name and campaign sensor number.", 2000);
         return;
@@ -106,47 +106,34 @@ export default function SettingsScreen() {
 
       const paddedSensor = campaignSensorNumber.padStart(3, "0");
 
-      // Check SecureStore availability before proceeding
       if (!(await SecureStore.isAvailableAsync())) {
         showToastAsync("Error: SecureStore is not available on this device. Cannot save settings.", 3000);
         return;
       }
 
-      // Attempt to save settings to SecureStore with retry logic
       const savedCampaignName = await writeWithRetry("campaignName", campaignName);
       const savedCampaignSensorNumber = await writeWithRetry("campaignSensorNumber", paddedSensor);
 
-      // If SecureStore save failed for either item, show error toast and exit
       if (!savedCampaignName || !savedCampaignSensorNumber) {
         showToastAsync("❌ Failed to save settings to SecureStore.", 3000);
-        return; // Important: Stop execution if SecureStore save failed
+        return;
       }
 
-      // --- SecureStore settings successfully saved. Now handle database clearing ---
       try {
-          // Ensure the database connection is open and tables are created/verified
           const db = await openDatabaseConnection();
-          console.log("✅ Database connection opened successfully for clearing.");  
-          // Attempt to clear the database
+          console.log("✅ Database connection opened successfully for clearing.");
           await clearDatabase(setDummyState, setCounter);
-              
+
           console.log("Database cleared successfully after settings save.");
-          // Inform user of full success (settings saved AND data cleared)
           showToastAsync("✅ Settings saved and old data cleared!", 2000);
       } catch (dbError) {
-          // This block catches errors specifically from database operations
           console.error("❌ Error during database operation after settings save:", dbError);
-          // Inform the user that settings were saved, but database clearing failed
           showToastAsync("✅ Settings saved, but failed to clear old data.", 4000);
       }
 
-      // Always navigate back after the entire process (settings save and database clear attempt)
-      // has completed, as appropriate toasts have already informed the user of the outcome.
       navigation.goBack();
 
     } catch (error) {
-      // This catch block handles any unexpected errors that might occur during the overall save process,
-      // e.g., issues with input processing or `showToastAsync` itself.
       console.error("❌ An unexpected error occurred during settings save:", error);
       showToastAsync("An unexpected error occurred while saving settings.", 3000);
     }
@@ -157,32 +144,77 @@ export default function SettingsScreen() {
    * Uses `GetPairedSensorName` and provides toast feedback.
    */
   const pairNewSensor = async () => {
+    // Clear any existing icon timer when a new pairing attempt is made
+    if (iconHideTimerRef.current) {
+      clearTimeout(iconHideTimerRef.current);
+      iconHideTimerRef.current = null;
+    }
+
     try {
-      const success = await GetPairedSensorName(); // Assuming this function handles the actual pairing
+      const success = await GetPairedSensorName();
+
       if (success) {
         setSensorPaired(true);
         showToastAsync("New sensor paired successfully!", 3000);
+
+        setIconType('green');
+        setIconText("Temperature sensor detected!");
+        setIconVisible(true);
+        iconHideTimerRef.current = setTimeout(() => {
+          setIconVisible(false);
+          setIconText("");
+          setIconType(null);
+        }, 4000);
+
       } else {
         setSensorPaired(false);
         showToastAsync("Failed to pair with a new sensor.", 2000);
+
+        setIconType('red');
+        setIconText("Temperature sensor not detected! Check the sensor!");
+        setIconVisible(true);
+        iconHideTimerRef.current = setTimeout(() => {
+          setIconVisible(false);
+          setIconText("");
+          setIconType(null);
+        }, 10000);
       }
     } catch (error) {
       console.error("❌ Error pairing new sensor:", error);
-      setSensorPaired(false); // Reset status on error
+      setSensorPaired(false);
       showToastAsync("An unexpected error occurred during sensor pairing.", 2000);
+
+      setIconType('red');
+      setIconText("An error occurred during pairing. Try again!");
+      setIconVisible(true);
+      iconHideTimerRef.current = setTimeout(() => {
+        setIconVisible(false);
+        setIconText("");
+        setIconType(null);
+      }, 4000);
     }
   };
 
+  // Cleanup effect for the icon timer
+  useEffect(() => {
+    return () => {
+      if (iconHideTimerRef.current) {
+        clearTimeout(iconHideTimerRef.current);
+      }
+    };
+  }, []);
+
+
   return (
     <KeyboardAvoidingView
-      // Adjust behavior based on platform for keyboard avoidance
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      {/* Sensor Paired Status Display */}
+
+      {/* Sensor Paired Status Display - Re-enabled as it might be useful */}
       {sensorPaired && (
         <View style={styles.sensorStatus}>
-          <Text style={styles.sensorStatusText}>✅ Sensor Paired!</Text>
+          <Text style={styles.sensorStatusText}></Text>
         </View>
       )}
 
@@ -191,9 +223,9 @@ export default function SettingsScreen() {
           {/* Pair New Sensor Button */}
           <TouchableOpacity
             style={[styles.saveButton, { marginBottom: 45 }, isPressed && styles.saveButtonPressed]}
-            onPressIn={() => setIsPressed(true)} // Visual feedback on press
-            onPressOut={() => setIsPressed(false)} // Visual feedback on release
-            onPress={pairNewSensor} // Action to pair sensor
+            onPressIn={() => setIsPressed(true)}
+            onPressOut={() => setIsPressed(false)}
+            onPress={pairNewSensor}
           >
             <Text style={[styles.saveButtonText, isPressed && styles.saveButtonTextPressed]}>
               Pair New Temperature Sensor
@@ -208,7 +240,7 @@ export default function SettingsScreen() {
             onChangeText={setCampaignName}
             placeholder="Campaign Name"
             returnKeyType="done"
-            autoCapitalize="words" // Capitalize first letter of each word
+            autoCapitalize="words"
           />
 
           {/* Sensor Number Input */}
@@ -217,20 +249,19 @@ export default function SettingsScreen() {
             style={styles.input}
             value={campaignSensorNumber}
             onChangeText={(text) =>
-              // Allow only numeric input and limit to 3 characters
               setCampaignSensorNumber(text.replace(/[^0-9]/g, "").slice(0, 3))
             }
             placeholder="Your Campaign Member Number"
-            keyboardType="numeric" // Numeric keyboard
-            maxLength={3} // Ensure maximum 3 digits
+            keyboardType="numeric"
+            maxLength={3}
           />
 
           {/* Save Settings Button */}
           <TouchableOpacity
             style={[styles.saveButton, isPressed && styles.saveButtonPressed]}
-            onPressIn={() => setIsPressed(true)} // Visual feedback on press
-            onPressOut={() => setIsPressed(false)} // Visual feedback on release
-            onPress={saveSettings} // Action to save settings
+            onPressIn={() => setIsPressed(true)}
+            onPressOut={() => setIsPressed(false)}
+            onPress={saveSettings}
           >
             <Text style={[styles.saveButtonText, isPressed && styles.saveButtonTextPressed]}>
               Save
@@ -238,6 +269,29 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </ScrollView>
       </TouchableWithoutFeedback>
+
+
+   {iconVisible && (
+  <View style={styles.iconContainer}>
+    {/* Apply dynamic text color based on iconType */}
+    <Text style={[
+      styles.iconMessageText, // Base style for icon text
+      iconType === 'green' && styles.iconMessageTextGreen, // Green color for success
+      iconType === 'red' && styles.iconMessageTextRed // Red color for error
+    ]}>
+      {iconText}
+    </Text>
+
+    {iconType === 'red' && (
+      <Icon name="error" size={50} color="red" />
+    )}
+    {iconType === 'green' && (
+      <Icon name="check-circle" size={50} color="green" />
+    )}
+</View>
+   )}
+
+
     </KeyboardAvoidingView>
   );
 }
@@ -251,67 +305,67 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   scrollContainer: {
-    flexGrow: 1, // Allows content to grow within the scroll view
-    justifyContent: "center", // Center content vertically
-    alignItems: "center", // Center content horizontally
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
   label: {
     fontSize: 18,
     marginBottom: 10,
     textAlign: "center",
-    fontWeight: "600", // Make labels slightly bolder
-    color: "#333", // Darker color for better contrast
+    fontWeight: "600",
+    color: "#333",
   },
   input: {
     width: "90%",
-    maxWidth: 300, // Limit max width for larger screens
+    maxWidth: 300,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#a0a0a0", // Slightly darker border
-    borderRadius: 8, // More rounded corners
-    marginBottom: 25, // More space below inputs
+    borderColor: "#a0a0a0",
+    borderRadius: 8,
+    marginBottom: 25,
     fontSize: 16,
     color: "#444",
-    backgroundColor: "#f9f9f9", // Light background for input
+    backgroundColor: "#f9f9f9",
   },
   saveButton: {
-    backgroundColor: "#007AFF", // iOS blue
+    backgroundColor: "#007AFF",
     paddingVertical: 15,
     paddingHorizontal: 40,
     borderRadius: 10,
     marginTop: 20,
     alignItems: "center",
-    shadowColor: "#000", // Add shadow for depth
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
-    elevation: 6, // Android elevation
+    elevation: 6,
   },
   saveButtonPressed: {
-    backgroundColor: "#FFFFFF", // White background when pressed
-    borderWidth: 2, // Thicker border
-    borderColor: "#007AFF", // Blue border when pressed
-    shadowOpacity: 0.1, // Reduced shadow when pressed
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#007AFF",
+    shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 3,
   },
   saveButtonText: {
-    color: "yellow", // Yellow text for default state
+    color: "yellow",
     fontSize: 18,
     fontWeight: "bold",
   },
   saveButtonTextPressed: {
-    color: "#007AFF", // Blue text when pressed
+    color: "#007AFF",
   },
   sensorStatus: {
     position: "absolute",
     top: 10,
     alignSelf: "center",
-    backgroundColor: "#e0ffe0", // Light green background
+    backgroundColor: "#e0ffe0",
     paddingHorizontal: 15,
     paddingVertical: 6,
     borderRadius: 10,
-    zIndex: 10, // Ensure it's on top
+    zIndex: 10,
     elevation: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -322,5 +376,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: "green",
+  },
+  iconContainer: {
+    position: "absolute",
+    bottom: 0, // Position at the bottom of the screen
+    marginBottom: 50, // Lift it up from the very bottom edge
+    alignSelf: "center", // Center horizontally
+    alignItems: "center", // Center content (text and icon) horizontally within the container
+    padding: 15, // Add some padding around the icon and text
+    backgroundColor: 'rgba(255,255,255,0.95)', // Slightly more opaque white background
+    borderRadius: 15, // More rounded corners
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+    width: '80%', // Give it a defined width
+    maxWidth: 350, // Max width for larger screens
+  },
+  // Base style for the icon message text
+  iconMessageText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 10, // Space between text and icon
+    fontWeight: 'bold', // Make it bold
+  },
+  // Specific color for green icon text
+  iconMessageTextGreen: {
+    color: 'green',
+  },
+  // Specific color for red icon text
+  iconMessageTextRed: {
+    color: 'red',
   },
 });

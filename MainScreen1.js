@@ -12,11 +12,10 @@ import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import { Button } from 'react-native-elements';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import Toast from 'react-native-root-toast';
 
 import { bleState } from "./utils/bleState";
 import { handleStart, stopSampling, confirmAndClearDatabase } from "./functions";
-import { uploadDatabaseToS3 } from "./functionsS3";
+import { uploadDatabaseToS3 } from "./functionsS3"; // Import uploadDatabaseToS3
 import { showToastAsync } from "./functionsHelper";
 import { VERSION } from "./constants";
 
@@ -26,8 +25,11 @@ export default function MainScreen1() {
   const [temperature, setTemperature] = useState(NaN);
   const [accuracy, setAccuracy] = useState(NaN);
   const [dummyState, setDummyState] = useState(0);
+
   const [iconType, setIconType] = useState(null);
   const [iconVisible, setIconVisible] = useState(false);
+  const [iconText, setIconText] = useState("");
+  const iconHideTimerRef = useRef(null);
 
   const navigation = useNavigation();
   const deviceNameRef = useRef(null);
@@ -87,14 +89,21 @@ export default function MainScreen1() {
     return unsubscribe;
   }, [navigation]);
 
- 
-
   useEffect(() => {
     console.log("MainScreen L4: Setting dummyState for bleState");
     bleState.setDummyState = setDummyState;
     if (!bleState.lastWriteTimestampRef) bleState.lastWriteTimestampRef = { current: 0 };
     if (!bleState.lastErrorToastTimestampRef) bleState.lastErrorToastTimestampRef = { current: 0 };
     if (!bleState.dbRef) bleState.dbRef = { current: null };
+  }, []);
+
+  // Cleanup effect for the icon timer, important when component unmounts
+  useEffect(() => {
+    return () => {
+      if (iconHideTimerRef.current) {
+        clearTimeout(iconHideTimerRef.current);
+      }
+    };
   }, []);
 
   useKeepAwake();
@@ -130,7 +139,9 @@ export default function MainScreen1() {
             setTemperature,
             setAccuracy,
             setIconType,
-            setIconVisible
+            setIconVisible,
+            setIconText,
+            iconHideTimerRef,
           );
         }}
       />
@@ -145,9 +156,8 @@ export default function MainScreen1() {
             showToastAsync("⚠️ Nothing to stop: Not connected or sampling.", 2000);
             return;
           }
-          stopSampling();
-          setIconVisible(false);
-          setIconType(null);
+          // Pass icon setters to stopSampling
+          stopSampling(setIconType, setIconVisible, setIconText, iconHideTimerRef);
         }}
       />
 
@@ -162,7 +172,16 @@ export default function MainScreen1() {
             return;
           }
           const currentDbFilePath = `${FileSystem.documentDirectory}SQLite/appData.db`;
-          uploadDatabaseToS3(currentDbFilePath, jobcodeRef, deviceNameRef);
+          // --- NEW: Pass icon setters to uploadDatabaseToS3 ---
+          uploadDatabaseToS3(
+            currentDbFilePath,
+            jobcodeRef,
+            deviceNameRef,
+            setIconType,
+            setIconVisible,
+            setIconText,
+            iconHideTimerRef
+          );
         }}
       />
 
@@ -174,13 +193,10 @@ export default function MainScreen1() {
         buttonStyle={{ backgroundColor: 'blue', borderRadius: 10 }}
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
-          confirmAndClearDatabase(setDummyState, setCounter);
-          setIconVisible(false);
-          setIconType(null);
+          // Pass icon setters to confirmAndClearDatabase
+          confirmAndClearDatabase(setDummyState, setCounter, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         }}
       />
-
-      
 
       <Image
         source={require("./assets/icon.png")}
@@ -189,35 +205,30 @@ export default function MainScreen1() {
       />
       <Text style={styles.questname}>Quest Science Center{"\n"}Livermore, CA</Text>
 
-      {/* Moved icon display to end to avoid toast overlap */}
-
-    
-    {iconVisible && (
-  <View style={styles.iconContainer}>
-    {iconType === 'red' && (
-      <>
-        
-        <Text style={styles.errorText}>Temperature sensor not connected!</Text>
-         <Text style={styles.errorText}>Push start to try to reconnect & resume!</Text>
-        <Icon name="error" size={50} color="red" />
-      </>
-    )}
-    {iconType === 'green' && (
-      <>
-      <Text style={styles.errorText}>Data sample saved!</Text>
-      <Icon name="check-circle" size={50} color="green" />
-      </>
-    )}
-  </View>
-)}
-
-      
-
+      {/* ICON DISPLAY: Now correctly uses iconText and dynamic text color */}
+      {iconVisible && (
+        <View style={styles.iconContainer}>
+          <Text style={[
+            styles.iconMessageText,
+            iconType === 'green' && styles.iconMessageTextGreen,
+            iconType === 'red' && styles.iconMessageTextRed
+          ]}>
+            {iconText}
+          </Text>
+          {iconType === 'red' && (
+            <Icon name="error" size={50} color="red" />
+          )}
+          {iconType === 'green' && (
+            <Icon name="check-circle" size={50} color="green" />
+          )}
+        </View>
+      )}
     </View>
   );
 }
 
 const { width, height } = Dimensions.get("window");
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -278,9 +289,37 @@ const styles = StyleSheet.create({
   iconContainer: {
     position: "absolute",
     bottom: 0,
-    marginTop: 20,
+    marginBottom: 50,
     alignSelf: "center",
-    marginBottom: 20,
     alignItems: "center",
-  }
+    padding: 15,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+    width: '80%',
+    maxWidth: 350,
+    zIndex: 9998,
+  },
+  iconMessageText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 10,
+    fontWeight: 'bold',
+  },
+  iconMessageTextGreen: {
+    color: 'green',
+  },
+  iconMessageTextRed: {
+    color: 'red',
+  },
+  errorText: {
+    fontSize: 16,
+    color: 'red',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
 });
