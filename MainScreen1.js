@@ -77,7 +77,8 @@ export default function MainScreen1() {
           if (!redirectedRef.current) {
             redirectedRef.current = true;
             console.warn("⚠️ Missing info. Redirecting to settings.");
-            await showToastAsync("Missing campaign info. Redirecting to Settings...", 3000);
+            //await showToastAsync("Missing campaign info. Redirecting to Settings...", 3000);
+            updateIconDisplay('red', "Missing campaign info! Redirecting to Settings...", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
             navigation.navigate("Settings");
           }
         }
@@ -106,6 +107,39 @@ export default function MainScreen1() {
     };
   }, []);
 
+  // --- Helper: Function to manage icon display (copied for self-containment) ---
+const updateIconDisplay = (
+  type, // 'green', 'red', or null
+  text,
+  duration, // how long the icon should be visible
+  setIconType,
+  setIconVisible,
+  setIconText,
+  iconHideTimerRef
+) => {
+  if (iconHideTimerRef.current) {
+    clearTimeout(iconHideTimerRef.current);
+    iconHideTimerRef.current = null;
+  }
+
+  if (type === null) {
+    setIconVisible(false);
+    setIconType(null);
+    setIconText("");
+  } else {
+    setIconType(type);
+    setIconText(text);
+    setIconVisible(true);
+    iconHideTimerRef.current = setTimeout(() => { // Corrected ref name: iconHideTimerTimerRef -> iconHideTimerRef
+      setIconVisible(false);
+      setIconType(null);
+      setIconText("");
+    }, duration);
+  }
+};
+
+
+
   useKeepAwake();
 
   return (
@@ -130,7 +164,8 @@ export default function MainScreen1() {
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
           if (!deviceNameRef.current) {
-            showToastAsync("❌ Device name missing. Check settings.", 3000);
+            //showToastAsync("❌ Device name missing. Check settings.", 3000);
+            updateIconDisplay('red', "Device name missing! Check settings.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
             return;
           }
           handleStart(
@@ -153,7 +188,8 @@ export default function MainScreen1() {
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
           if (!bleState.deviceRef.current && !bleState.isSamplingRef.current) {
-            showToastAsync("⚠️ Nothing to stop: Not connected or sampling.", 2000);
+            //showToastAsync("⚠️ Nothing to stop: Not connected or sampling.", 2000);
+            updateIconDisplay('red', "Nothing to stop: Not connected or sampling.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
             return;
           }
           // Pass icon setters to stopSampling
@@ -168,7 +204,8 @@ export default function MainScreen1() {
         titleStyle={{ color: 'yellow' }}
         onPress={() => {
           if (!deviceNameRef.current || !jobcodeRef.current) {
-            showToastAsync("❌ Missing metadata. Cannot upload.", 3000);
+            //showToastAsync("❌ Missing metadata. Cannot upload.", 3000);
+            updateIconDisplay('red', "Missing metadata! Cannot upload.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
             return;
           }
           const currentDbFilePath = `${FileSystem.documentDirectory}SQLite/appData.db`;

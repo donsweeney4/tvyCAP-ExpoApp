@@ -30,7 +30,7 @@ export const displayErrorToast = async (message, duration = 3000) => {
   }
 };
 
-// --- NEW HELPER: Function to manage icon display ---
+//# --- NEW HELPER: Function to manage icon display ---
 const updateIconDisplay = (
   type, // 'green', 'red', or null
   text,
@@ -131,7 +131,8 @@ export const openDatabaseConnection = async () => { // Exported for use in Setti
     return database;
   } catch (error) {
     console.error("❌ Error opening database:", error);
-    await displayErrorToast("❌ Critical error: Could not open database! Restart app.", 10000);
+    //await displayErrorToast("❌ Critical error: Could not open database! Restart app.", 10000);
+    updateIconDisplay('red', "Database error: Could not open database!", 10000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     throw error; // Re-throw to propagate the error
   }
 };
@@ -214,7 +215,7 @@ export const handleStart = async (
       }, 500);
 
     } else {
-      displayErrorToast("Sensor not found or failed to connect", 2000);
+      //displayErrorToast("Sensor not found or failed to connect", 2000);
       console.warn("⚠️ Device not found or failed to connect.");
       // Set red icon if initial connection or characteristic discovery failed
       updateIconDisplay('red', "Sensor not found or failed to connect!", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
@@ -359,7 +360,7 @@ const handleDeviceDisconnection = async (setIconType, setIconVisible, setIconTex
   bleState.characteristicsRef.current = null;
   bleState.setDummyState(prev => prev + 1);
 
-  await showToastAsync("⚠️ Sensor disconnected! Press start to reconnect.", 2000);
+  //await showToastAsync("⚠️ Sensor disconnected! Press start to reconnect.", 2000);
   updateIconDisplay('red', "Sensor disconnected! Reconnect to continue.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
 
 
@@ -391,14 +392,14 @@ const startSampling = async (
 
   if (!device || !isConnected) {
     console.warn("⚠️ Sensor device is not connected. Sampling cannot start.");
-    displayErrorToast("⚠️ Cannot start sampling. BLE sensor is not connected!", 3000);
+    //displayErrorToast("⚠️ Cannot start sampling. BLE sensor is not connected!", 3000);
     updateIconDisplay('red', "Sensor not connected! Cannot sample.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     return;
   }
 
   if (!bleState.characteristicsRef.current) {
     console.warn("⚠️ No characteristic available. Cannot start sampling.");
-    displayErrorToast("⚠️ Cannot start sampling. No BLE characteristic found!", 3000);
+    //displayErrorToast("⚠️ Cannot start sampling. No BLE characteristic found!", 3000);
     updateIconDisplay('red', "No BLE characteristic found! Cannot sample.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     return;
   }
@@ -434,7 +435,7 @@ const startSampling = async (
             console.warn("⚠️ Device disconnected. Stopping location tracking.");
             bleState.isIntentionalDisconnectRef.current = false;
             stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef); // Pass icon setters
-            displayErrorToast("⚠️ Device disconnected. Stopping location tracking.", 5000);
+            //displayErrorToast("⚠️ Device disconnected. Stopping location tracking.", 5000);
             updateIconDisplay('red', "Device disconnected! Data stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
             return;
           }
@@ -445,7 +446,7 @@ const startSampling = async (
         } catch (err) {
           console.error("❌ Error inside watchPositionAsync callback:", err);
           stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef); // Pass icon setters
-          displayErrorToast("❌ An error occurred during data collection. Sampling stopped.", 5000);
+          //displayErrorToast("❌ An error occurred during data collection. Sampling stopped.", 5000);
           updateIconDisplay('red', "Data collection error! Sampling stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         }
       }
@@ -455,7 +456,7 @@ const startSampling = async (
   } catch (error) {
     console.error("❌ Error starting location tracking:", error);
     stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef); // Pass icon setters
-    displayErrorToast("❌ Error starting location tracking. Sampling stopped.", 5000);
+    //displayErrorToast("❌ Error starting location tracking. Sampling stopped.", 5000);
     updateIconDisplay('red', "Location error! Sampling stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
   }
 };
@@ -524,7 +525,7 @@ const handleLocationUpdate = async (
       console.warn("⚠️ Device disconnected or no characteristic found. Stopping updates...");
       bleState.isIntentionalDisconnectRef.current = false;
       stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef);
-      displayErrorToast("⚠️ BLE device disconnected. Data recording stopped.", 5000);
+      //displayErrorToast("⚠️ BLE device disconnected. Data recording stopped.", 5000);
       updateIconDisplay('red', "BLE disconnected! Data recording stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
@@ -541,14 +542,14 @@ const handleLocationUpdate = async (
     } catch (readError) {
       console.error("❌ Error reading characteristic from BLE device:", readError);
       stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef);
-      displayErrorToast("❌ Failed to read data from sensor. Data recording stopped.", 5000);
+      //displayErrorToast("❌ Failed to read data from sensor. Data recording stopped.", 5000);
       updateIconDisplay('red', "Sensor read error! Data recording stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
 
     if (!rawData || !rawData.value) {
       console.error("❌ Error: No value returned in the characteristic.");
-      displayErrorToast("❌ No value from BLE device. Check connection.", 3000);
+      //displayErrorToast("❌ No value from BLE device. Check connection.", 3000);
       updateIconDisplay('red', "No data from sensor! Check connection.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
@@ -588,7 +589,7 @@ const handleLocationUpdate = async (
       if (!database) {
           console.error("❌ Database reference is null. Cannot write data.");
           stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef);
-          displayErrorToast("❌ Data recording stopped! Database not available.", 5000);
+          //displayErrorToast("❌ Data recording stopped! Database not available.", 5000);
           updateIconDisplay('red', "Database error! Data recording stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
           return;
       }
@@ -612,10 +613,10 @@ const handleLocationUpdate = async (
     } catch (dbError) {
       console.error("❌ Fatal Error inserting data into database:", dbError);
       stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef);
-      displayErrorToast(
-        "❌ ERROR: Data recording stopped! Database issue. Please restart the app.",
-        15000
-      );
+      //displayErrorToast(
+      //        "❌ ERROR: Data recording stopped! Database issue. Please restart the app.",
+      //        15000
+      //);
       console.log("🗑️ Invalidating database reference due to error.");
       bleState.dbRef.current = null;
       updateIconDisplay('red', "Database write error! Recording stopped.", 8000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
@@ -625,7 +626,7 @@ const handleLocationUpdate = async (
   } catch (error) {
     console.error("❌ General error in handleLocationUpdate:", error);
     stopSamplingLoop(setIconType, setIconVisible, setIconText, iconHideTimerRef);
-    displayErrorToast("❌ An unexpected error occurred. Data recording stopped.", 5000);
+    //displayErrorToast("❌ An unexpected error occurred. Data recording stopped.", 5000);
     updateIconDisplay('red', "Unexpected error! Recording stopped.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
   }
 };
@@ -645,7 +646,7 @@ export const stopSampling = async (setIconType, setIconVisible, setIconText, ico
 
   if (!bleState.deviceRef.current) {
     console.log("⚠️ No device connected.");
-    await showToastAsync("Stopped Sampling Temperature Data", 3000);
+    //await showToastAsync("Stopped Sampling Temperature Data", 3000);
     // Clear icon on manual stop, unless it's already showing a persistent error
     updateIconDisplay(null, "", 0, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     return;
@@ -660,14 +661,14 @@ export const stopSampling = async (setIconType, setIconVisible, setIconText, ico
     }
   } catch (error) {
     console.error("❌ Disconnection error on stop:", error);
-    displayErrorToast("❌ Failed to disconnect BLE device gracefully.", 3000);
+    //displayErrorToast("❌ Failed to disconnect BLE device gracefully.", 3000);
     // You might want a specific icon here, or let the general error catch handle it
     updateIconDisplay('red', "Disconnection error!", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
   }
 
   bleState.deviceRef.current = null;
   bleState.setDummyState(prev => prev + 1);
-  await showToastAsync("Stopped Sampling Temperature Data", 3000);
+  //await showToastAsync("Stopped Sampling Temperature Data", 3000);
   // Ensure icon is cleared after successful manual stop
   updateIconDisplay(null, "", 0, setIconType, setIconVisible, setIconText, iconHideTimerRef);
 };
@@ -676,7 +677,8 @@ export const stopSampling = async (setIconType, setIconVisible, setIconText, ico
 
 export const confirmAndClearDatabase = (setDummyState, setCounter, setIconType, setIconVisible, setIconText, iconHideTimerRef) => {
   if (bleState.isSamplingRef.current) {
-    showToastAsync("Sampling in Progress. Stop sampling before clearing data.", 2000);
+    //showToastAsync("Sampling in Progress. Stop sampling before clearing data.", 2000);
+    updateIconDisplay('red', "Sampling in Progress! Stop sampling before clearing data.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     return;
   }
 
@@ -711,7 +713,7 @@ export const clearDatabase = async (setDummyState, setCounter, setIconType, setI
 
     if (!database) {
       console.warn("⚠️ Database not open/available. Cannot clear data.");
-      displayErrorToast("⚠️ Cannot clear data. Database not available. ", 5000);
+      //displayErrorToast("⚠️ Cannot clear data. Database not available. ", 5000);
       updateIconDisplay('red', "Database not available! Cannot clear data.", 5000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
       return;
     }
@@ -719,13 +721,13 @@ export const clearDatabase = async (setDummyState, setCounter, setIconType, setI
     await database.runAsync("DELETE FROM appData;");
     console.log("✅ Database cleared successfully.");
     setDummyState(prev => prev + 1);
-    showToastAsync("Data deleted", 2000);
+    //showToastAsync("Data deleted", 2000);
     // Show green icon briefly for successful clear, then clear it
     updateIconDisplay('green', "Data cleared successfully!", 2000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
 
   } catch (error) {
     console.error("❌ Error clearing database:", error);
-    displayErrorToast("❌ Error clearing database: " + error.message, 8000);
+    //displayErrorToast("❌ Error clearing database: " + error.message, 8000);
     bleState.dbRef.current = null;
     updateIconDisplay('red', `Error clearing DB: ${error.message}`, 8000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
   }
@@ -829,7 +831,8 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
           console.log("✅ BLE adapter is powered on");
           subscription.remove();
 
-          showToastAsync("Start scanning for BLE devices", 2000);
+          //showToastAsync("Start scanning for BLE devices", 2000);
+          updateIconDisplay('green', "Scanning for BLE devices...", 2000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
           console.log("🚀 Scanning for BLE devices...");
 
           bleState.manager.startDeviceScan(null, null, async (error, device) => {
@@ -846,7 +849,8 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
 
             if (questPattern.test(name)) {
               console.log("🎯 Matching device name found:", name);
-              showToastAsync(`Found device: ${name}`, 2000);
+              //showToastAsync(`Found device: ${name}`, 2000);
+              updateIconDisplay('green', `Found device: ${name}`, 2000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
               scanResolved = true;
               clearTimeout(scanTimeoutHandle);
               bleState.manager.stopDeviceScan();
@@ -874,13 +878,14 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
                 }
 
                 bleState.deviceRef.current = device;
-                showToastAsync(`Connected to ${name}`, 2000);
+                //showToastAsync(`Connected to ${name}`, 2000);
+                updateIconDisplay('green', `Connected to ${name}`, 2000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
                 console.log("🔌 Connected to device:", name);
 
                 await SecureStore.setItemAsync("pairedSensorName", name);
                 console.log("🔒 Sensor name saved to SecureStore");
-                showToastAsync(`Sensor name ${name} saved to SecureStore`, 3000);
-
+                //showToastAsync(`Sensor name ${name} saved to SecureStore`, 3000);
+                updateIconDisplay('green', `Sensor name saved: ${name}`, 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
                 await device.cancelConnection();
                 bleState.deviceRef.current = null;
 
@@ -898,7 +903,8 @@ export const GetPairedSensorName = async (scanTimeout = 10000) => {
               bleState.manager.stopDeviceScan();
               console.error("❌ Timeout: No matching quest_nnn device found.");
               reject(new Error("Timeout: No matching quest_nnn device found."));
-              showToastAsync("Timeout: quest_nnn sensor not found", 3000);
+              //showToastAsync("Timeout: quest_nnn sensor not found", 3000);
+              updateIconDisplay('red', "Timeout: quest_nnn sensor not found", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
             }
           }, scanTimeout);
         }

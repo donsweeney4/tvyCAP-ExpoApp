@@ -35,6 +35,38 @@ export default function SettingsScreen() {
 
   const navigation = useNavigation();
 
+//# --- NEW HELPER: Function to manage icon display ---
+const updateIconDisplay = (
+  type, // 'green', 'red', or null
+  text,
+  duration, // how long the icon should be visible
+  setIconType,
+  setIconVisible,
+  setIconText,
+  iconHideTimerRef
+) => {
+  if (iconHideTimerRef.current) {
+    clearTimeout(iconHideTimerRef.current);
+    iconHideTimerRef.current = null;
+  }
+
+  if (type === null) { // If type is null, hide icon immediately
+    setIconVisible(false);
+    setIconType(null);
+    setIconText("");
+  } else {
+    setIconType(type);
+    setIconText(text);
+    setIconVisible(true);
+    iconHideTimerRef.current = setTimeout(() => {
+      setIconVisible(false);
+      setIconType(null);
+      setIconText("");
+    }, duration);
+  }
+};
+
+
   /**
    * Loads saved settings (campaignName and campaignSensorNumber) from SecureStore
    * when the component mounts.
@@ -52,7 +84,7 @@ export default function SettingsScreen() {
       if (storedCampaignSensorNumber) setCampaignSensorNumber(storedCampaignSensorNumber);
     } catch (error) {
       console.error("Error loading settings from SecureStore:", error);
-      showToastAsync("Error loading saved settings.", 2000);
+      //showToastAsync("Error loading settings.", 3000);
     }
   };
 
@@ -95,19 +127,23 @@ export default function SettingsScreen() {
       Keyboard.dismiss();
 
       if (!campaignName || !campaignSensorNumber) {
-        showToastAsync("Missing Info \n Enter both campaign name and campaign sensor number.", 2000);
+        //showToastAsync("Missing Info \n Enter both campaign name and campaign sensor number.", 2000);
+        updateIconDisplay('red', "Missing Info! Enter both campaign name and sensor number.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         return;
       }
 
       if (campaignName.includes("_")) {
-        showToastAsync("❌ Campaign name cannot contain underscores (_)", 3000);
+        //showToastAsync("❌ Campaign name cannot contain underscores (_)", 3000);
+        updateIconDisplay('red', "Campaign name cannot contain underscores (_)", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         return;
       }
 
       const paddedSensor = campaignSensorNumber.padStart(3, "0");
 
       if (!(await SecureStore.isAvailableAsync())) {
-        showToastAsync("Error: SecureStore is not available on this device. Cannot save settings.", 3000);
+        //showToastAsync("Error: SecureStore is not available on this device. Cannot save settings.", 3000);
+        console.error("SecureStore is not available on this device.");
+        updateIconDisplay('red', "SecureStore not available! Cannot save settings.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
         return;
       }
 
@@ -115,7 +151,8 @@ export default function SettingsScreen() {
       const savedCampaignSensorNumber = await writeWithRetry("campaignSensorNumber", paddedSensor);
 
       if (!savedCampaignName || !savedCampaignSensorNumber) {
-        showToastAsync("❌ Failed to save settings to SecureStore.", 3000);
+        //showToastAsync("❌ Failed to save settings to SecureStore.", 3000);
+        updateIconDisplay('red', "Failed to save settings to SecureStore.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);  
         return;
       }
 
@@ -125,17 +162,22 @@ export default function SettingsScreen() {
           await clearDatabase(setDummyState, setCounter);
 
           console.log("Database cleared successfully after settings save.");
-          showToastAsync("✅ Settings saved and old data cleared!", 2000);
+          //showToastAsync("✅ Settings saved and old data cleared!", 2000);
+          u
+
       } catch (dbError) {
           console.error("❌ Error during database operation after settings save:", dbError);
-          showToastAsync("✅ Settings saved, but failed to clear old data.", 4000);
+          //showToastAsync("✅ Settings saved, but failed to clear old data.", 4000);
+          updateIconDisplay('red', "Settings saved, but failed to clear old data.", 4000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
+          return;
       }
 
       navigation.goBack();
 
     } catch (error) {
       console.error("❌ An unexpected error occurred during settings save:", error);
-      showToastAsync("An unexpected error occurred while saving settings.", 3000);
+      //showToastAsync("An unexpected error occurred while saving settings.", 3000);
+      updateIconDisplay('red', "An unexpected error occurred while saving settings.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     }
   };
 
@@ -155,43 +197,22 @@ export default function SettingsScreen() {
 
       if (success) {
         setSensorPaired(true);
-        showToastAsync("New sensor paired successfully!", 3000);
+        //showToastAsync("New sensor paired successfully!", 3000);
 
-        setIconType('green');
-        setIconText("Temperature sensor detected!");
-        setIconVisible(true);
-        iconHideTimerRef.current = setTimeout(() => {
-          setIconVisible(false);
-          setIconText("");
-          setIconType(null);
-        }, 4000);
+        updateIconDisplay('green', "New sensor paired successfully!", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
 
       } else {
         setSensorPaired(false);
-        showToastAsync("Failed to pair with a new sensor.", 2000);
+        //showToastAsync("Failed to pair with a new sensor.", 2000);
 
-        setIconType('red');
-        setIconText("Temperature sensor not detected! Check the sensor!");
-        setIconVisible(true);
-        iconHideTimerRef.current = setTimeout(() => {
-          setIconVisible(false);
-          setIconText("");
-          setIconType(null);
-        }, 10000);
+
       }
     } catch (error) {
       console.error("❌ Error pairing new sensor:", error);
       setSensorPaired(false);
       showToastAsync("An unexpected error occurred during sensor pairing.", 2000);
 
-      setIconType('red');
-      setIconText("An error occurred during pairing. Try again!");
-      setIconVisible(true);
-      iconHideTimerRef.current = setTimeout(() => {
-        setIconVisible(false);
-        setIconText("");
-        setIconType(null);
-      }, 4000);
+      updateIconDisplay('red', "An unexpected error occurred during sensor pairing.", 3000, setIconType, setIconVisible, setIconText, iconHideTimerRef);
     }
   };
 
